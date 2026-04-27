@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     # LLM
     ollama_url: str = "http://localhost:11434/v1/chat/completions"
     ollama_model: str = "qwen2.5"
-    llm_timeout: float = 60.0
+    llm_timeout: float = 30.0
 
     # Typesense
     typesense_host: str = "localhost"

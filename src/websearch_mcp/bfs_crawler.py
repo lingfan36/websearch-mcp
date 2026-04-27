@@ -191,7 +191,7 @@ class BFSCrawler:
         max_pages: int = 100,
         max_time_seconds: int = 300,
     ) -> CrawlStats:
-        """Run BFS crawl.
+        """Run BFS crawl with batched concurrent processing.
 
         Args:
             max_pages: Maximum pages to crawl in this run
@@ -217,42 +217,61 @@ class BFSCrawler:
                 logger.info("crawl_time_limit", elapsed=elapsed)
                 break
 
-            # Get next URL from queue
-            item = self.state.dequeue()
-            if not item:
+            # Batch dequeue up to max_concurrent items
+            batch_items: list[tuple[str, int]] = []
+            for _ in range(self.max_concurrent):
+                if self.stats.pages_crawled + len(batch_items) >= max_pages:
+                    break
+
+                item = self.state.dequeue()
+                if not item:
+                    break
+
+                url, depth = item
+
+                # Skip already visited
+                if url in self.state.visited_urls:
+                    continue
+
+                # Check if should crawl
+                if not should_crawl_url(url, self.seed_manager.domains, self.max_depth, self.state.url_depths):
+                    continue
+
+                # Check if needs recrawl (recently crawled)
+                last_crawled = self.state.last_crawl_time.get(url)
+                if last_crawled:
+                    last_time = datetime.fromisoformat(last_crawled)
+                    if datetime.utcnow() - last_time < timedelta(days=7):
+                        continue
+
+                batch_items.append((url, depth))
+
+            if not batch_items:
                 logger.info("crawl_queue_empty")
                 break
 
-            url, depth = item
-
-            # Check if already visited
-            if url in self.state.visited_urls:
-                continue
-
-            # Check if should crawl
-            if not should_crawl_url(url, self.seed_manager.domains, self.max_depth, self.state.url_depths):
-                continue
-
-            # Check if needs recrawl (old content)
-            last_crawled = self.state.last_crawl_time.get(url)
-            if last_crawled:
-                last_time = datetime.fromisoformat(last_crawled)
-                if datetime.utcnow() - last_time < timedelta(days=7):
-                    # Skip if crawled within 7 days
-                    continue
-
-            # Crawl and extract links
-            links = await self._crawl_with_extraction(url, depth, semaphore)
+            # Crawl batch concurrently
+            tasks = [
+                self._crawl_with_extraction(url, depth, semaphore)
+                for url, depth in batch_items
+            ]
+            results = await asyncio.gather(*tasks, return_exceptions=True)
 
             # Process discovered links
-            for link in links:
-                if link.domain not in self.seed_manager.domains:
-                    self.seed_manager.add_discovered_domain(link.domain)
-                    self.stats.new_domains_discovered += 1
-                    logger.info("new_domain_discovered", domain=link.domain)
+            for i, links in enumerate(results):
+                if isinstance(links, Exception):
+                    logger.warning("crawl_batch_error", error=str(links))
+                    continue
 
-                self.state.enqueue(link.url, depth + 1)
-                self.stats.new_urls_discovered += 1
+                for link in links:
+                    if link.domain not in self.seed_manager.domains:
+                        self.seed_manager.add_discovered_domain(link.domain)
+                        self.stats.new_domains_discovered += 1
+                        logger.info("new_domain_discovered", domain=link.domain)
+
+                    _, depth = batch_items[i]
+                    self.state.enqueue(link.url, depth + 1)
+                    self.stats.new_urls_discovered += 1
 
             # Save state periodically
             if self.stats.pages_crawled % 10 == 0:

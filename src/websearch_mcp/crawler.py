@@ -26,7 +26,7 @@ class CrawledPage:
     error: str | None = None
 
 
-async def crawl_page(url: str, delay: float = 1.0) -> CrawledPage:
+async def crawl_page(url: str, delay: float = 0.0) -> CrawledPage:
     """Crawl a single page using trafilatura.
 
     Args:
@@ -36,11 +36,11 @@ async def crawl_page(url: str, delay: float = 1.0) -> CrawledPage:
     Returns:
         CrawledPage with extracted content
     """
-    # Rate limiting
-    await asyncio.sleep(delay)
+    if delay > 0:
+        await asyncio.sleep(delay)
 
     try:
-        downloaded = trafilatura.fetch_url(url)
+        downloaded = await asyncio.to_thread(trafilatura.fetch_url, url)
         if not downloaded:
             return CrawledPage(
                 url=url,
@@ -52,7 +52,8 @@ async def crawl_page(url: str, delay: float = 1.0) -> CrawledPage:
                 error="Failed to download",
             )
 
-        extracted = trafilatura.extract(
+        extracted = await asyncio.to_thread(
+            trafilatura.extract,
             downloaded,
             include_comments=False,
             include_tables=True,
@@ -60,7 +61,8 @@ async def crawl_page(url: str, delay: float = 1.0) -> CrawledPage:
         )
 
         if not extracted:
-            extracted = trafilatura.extract(
+            extracted = await asyncio.to_thread(
+                trafilatura.extract,
                 downloaded,
                 output_format="txt",
             )
@@ -111,40 +113,36 @@ async def crawl_pages(
     concurrency: int = 3,
     delay: float = 1.0,
 ) -> list[CrawledPage]:
-    """Crawl multiple pages concurrently.
+    """Crawl multiple pages concurrently with per-domain rate limiting.
 
     Args:
         urls: List of URLs to crawl
         concurrency: Max concurrent crawls
-        delay: Delay between requests per domain
+        delay: Minimum delay between requests to the same domain
 
     Returns:
         List of CrawledPage results
     """
     semaphore = asyncio.Semaphore(concurrency)
-
-    async def crawl_with_semaphore(url: str, domain_delay: float) -> CrawledPage:
-        async with semaphore:
-            return await crawl_page(url, domain_delay)
-
-    # Group by domain for rate limiting
     domain_last_crawl: dict[str, float] = {}
 
-    async def get_delay_for_url(url: str) -> float:
+    async def crawl_with_domain_rate_limit(url: str) -> CrawledPage:
         parsed = urlparse(url)
         domain = parsed.netloc
+
+        # Per-domain rate limiting: only sleep if last crawl was too recent
         now = time.time()
         last = domain_last_crawl.get(domain, 0)
         elapsed = now - last
-        if elapsed < delay:
+        if elapsed < delay and last > 0:
             await asyncio.sleep(delay - elapsed)
-        domain_last_crawl[domain] = time.time()
-        return 0
 
-    tasks = []
-    for url in urls:
-        tasks.append(crawl_with_semaphore(url, delay))
+        async with semaphore:
+            page = await crawl_page(url)
+            domain_last_crawl[domain] = time.time()
+            return page
 
+    tasks = [crawl_with_domain_rate_limit(url) for url in urls]
     results = await asyncio.gather(*tasks, return_exceptions=True)
 
     crawled: list[CrawledPage] = []

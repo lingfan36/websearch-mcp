@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import re
-from typing import Any
+from typing import Any, Coroutine
 from urllib.parse import urlparse, urljoin
 
 import structlog
@@ -197,49 +198,56 @@ async def smart_fetch(
             result["github_repos"] = repos
             logger.info("smart_fetch_github_repos", count=len(repos))
 
-        # Analyze and extract structured data
-        if len(content) > 100:
+        # Analyze and extract structured data (skip trivially short pages)
+        if len(content) > 500:
             extracted = await extract_with_llm(content[:10000], url, client)
             if extracted:
                 result["extracted_data"] = extracted
 
         # Follow relevant links if depth allows
         if follow_depth > 0:
-            # For GitHub trending, construct repo URLs from the listing
+            follow_sem = asyncio.Semaphore(3)
+
+            async def _follow_one(title: str, follow_url: str) -> dict[str, Any] | None:
+                if follow_url in visited:
+                    return None
+                async with follow_sem:
+                    sub = await smart_fetch(
+                        follow_url,
+                        max_length=max_length,
+                        follow_depth=follow_depth - 1,
+                        client=client,
+                        visited=visited,
+                    )
+                if sub.get("skipped"):
+                    return None
+                sub["title"] = title
+                return sub
+
+            follow_tasks: list[Coroutine] = []
+
             if 'github.com/trending' in url and result["github_repos"]:
-                for repo in result["github_repos"][:3]:  # Follow top 3 repos
+                for repo in result["github_repos"][:3]:
                     repo_url = repo["url"]
                     if repo_url not in visited:
-                        sub_result = await smart_fetch(
-                            repo_url,
-                            max_length=max_length,
-                            follow_depth=follow_depth - 1,
-                            client=client,
-                            visited=visited,
+                        follow_tasks.append(
+                            _follow_one(f"{repo['owner']}/{repo['repo']}", repo_url)
                         )
-                        if not sub_result.get("skipped"):
-                            sub_result["title"] = f"{repo['owner']}/{repo['repo']}"
-                            result["followed_urls"].append(sub_result)
             else:
-                # Generic URL extraction for other pages
                 urls = extract_urls(content, url)
                 to_follow = [(t, u) for t, u in urls if should_follow_url(u)]
-
                 logger.info("smart_fetch_found_links", count=len(to_follow))
-
-                # Follow up to 5 links
                 for title, follow_url in to_follow[:5]:
-                    if follow_url not in visited and len(result["followed_urls"]) < 5:
-                        sub_result = await smart_fetch(
-                            follow_url,
-                            max_length=max_length,
-                            follow_depth=follow_depth - 1,
-                            client=client,
-                            visited=visited,
-                        )
-                        if not sub_result.get("skipped"):
-                            sub_result["title"] = title
-                            result["followed_urls"].append(sub_result)
+                    if follow_url not in visited:
+                        follow_tasks.append(_follow_one(title, follow_url))
+
+            if follow_tasks:
+                follow_results = await asyncio.gather(*follow_tasks, return_exceptions=True)
+                for r in follow_results:
+                    if isinstance(r, dict):
+                        result["followed_urls"].append(r)
+                    elif isinstance(r, Exception):
+                        logger.warning("smart_fetch_follow_error", error=str(r))
 
         return result
 

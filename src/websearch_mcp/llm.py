@@ -69,11 +69,11 @@ class LLMClient:
         self,
         api_url: str | None = None,
         model: str | None = None,
-        timeout: float = 120.0,
+        timeout: float | None = None,
     ):
         self.api_url = api_url or DEFAULT_OLLAMA_URL
         self.model = model or DEFAULT_MODEL
-        self.timeout = timeout
+        self.timeout = timeout if timeout is not None else 30.0
         self._client: httpx.AsyncClient | None = None
 
     @property
@@ -186,5 +186,7 @@ class LLMClient:
 
 
 def create_llm_client() -> LLMClient:
-    """Factory for LLM client."""
-    return LLMClient()
+    """Factory for LLM client — reads timeout from config."""
+    from .config import get_settings
+    settings = get_settings()
+    return LLMClient(timeout=settings.llm_timeout)

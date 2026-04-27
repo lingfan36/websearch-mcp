@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import uuid
 from datetime import datetime
 
@@ -100,11 +101,16 @@ class SearchNode:
 
         logger.info("search_start", query_count=len(rewriter_output.queries))
 
-        # Search all queries
+        # Search all queries in parallel
+        tasks = [self._search_single(q) for q in rewriter_output.queries]
+        all_results_lists = await asyncio.gather(*tasks, return_exceptions=True)
+
         all_results: list[SearchResult] = []
-        for q in rewriter_output.queries:
-            results = await self._search_single(q)
-            all_results.extend(results)
+        for results in all_results_lists:
+            if isinstance(results, list):
+                all_results.extend(results)
+            elif isinstance(results, Exception):
+                logger.warning("search_query_error", error=str(results))
 
         # Deduplicate by URL
         seen_urls: set[str] = set()
