@@ -1,123 +1,102 @@
-# WebSearch MCP Server
+# 🔍 WebSearch MCP
 
-A self-built MCP (Model Context Protocol) server for intelligent web search and content fetching, powered by local Ollama LLM.
+> Build your own Tavily-like web search with MCP protocol. Self-hosted, local-first, fully customizable.
 
-## Features
+[![MCP Server](https://img.shields.io/badge/MCP-Server-blue?style=flat-square)](https://modelcontextprotocol.org/)
+[![Python](https://img.shields.io/badge/Python-3.10+-green?style=flat-square)](https://python.org)
+[![License](https://img.shields.io/badge/License-MIT-purple?style=flat-square)](LICENSE)
+[![Stars](https://img.shields.io/github/stars/lingfan36/websearch-mcp?style=flat-square)](https://github.com/lingfan36/websearch-mcp/stargazers)
 
-### 🔍 Intelligent Web Search (`web_search`)
-- **Deep research pipeline**: Rewriter → Search → Extractor → Evaluator → Synthesizer
-- Multi-query rewriting with parallel execution
-- Structured fact extraction and quality evaluation
-- Iteration loop for gap-filling until sufficient
+**WebSearch MCP** is a self-built Model Context Protocol server that brings intelligent web search and content fetching capabilities to your AI agents. Powered by local Ollama LLM — no external API dependencies, no privacy concerns.
 
-### 🌐 Direct URL Fetching (`fetch`)
-- Fetch any URL and extract as markdown
-- Automatic HTML-to-markdown conversion using Readability
-- Pagination support (`max_length`, `start_index`)
-- Robots.txt compliance
-- Raw HTML mode available
+---
 
-### 🧠 Smart Fetch with Insights (`fetch_with_insights`)
-- AI-powered link following and data extraction
-- Automatic pattern recognition (e.g., GitHub trending repos)
-- Structured data extraction from multiple sources
-- Configurable follow depth
+## ✨ Features
 
-## Architecture
+### 🤖 Three Powerful Tools in One
+
+| Tool | Purpose | Best For |
+|------|---------|----------|
+| **`web_search`** | Deep research pipeline | Complex queries, multi-source synthesis |
+| **`fetch`** | Direct URL fetching | Real-time data, specific URLs |
+| **`fetch_with_insights`** | Smart crawling + AI extraction | Research, comparisons, structured data |
+
+### 🧠 Intelligent Pipeline
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                     MCP Server                         │
-├─────────────────────────────────────────────────────────┤
-│                                                         │
-│  ┌──────────────┐    ┌──────────────┐    ┌───────────┐ │
-│  │  web_search  │    │    fetch    │    │ fetch_with│ │
-│  │   (deep)     │    │  (realtime) │    │ _insights │ │
-│  └──────┬───────┘    └──────┬───────┘    └─────┬─────┘ │
-│         │                   │                  │       │
-│         ▼                   ▼                  ▼       │
-│  ┌─────────────────────────────────────────────────┐   │
-│  │              Pipeline Nodes                      │   │
-│  │  Rewriter → Search → Extractor → Evaluator      │   │
-│  │                    ↓                            │   │
-│  │               Synthesizer                       │   │
-│  └─────────────────────────────────────────────────┘   │
-│         │                   │                  │       │
-│         ▼                   ▼                  ▼       │
-│  ┌────────────┐      ┌────────────┐      ┌──────────┐ │
-│  │  Typesense │      │  Trafilatura│      │   LLM    │ │
-│  │   (index)  │      │  (crawler)  │      │ (Ollama) │ │
-│  └────────────┘      └────────────┘      └──────────┘ │
-│                                                         │
-└─────────────────────────────────────────────────────────┘
+User Query → Rewriter → Parallel Search → Extractor → Evaluator → [Loop] → Synthesizer
+                    ↓              ↓
+               Typesense       Trafilatura
+                    ↓              ↓
+                    └──────────────┴──→ Ollama (Local LLM)
 ```
 
-## Installation
+- **Query Rewriting**: Transform queries into 2-5 optimized sub-queries
+- **Parallel Search**: Execute multiple searches concurrently
+- **Fact Extraction**: Pull structured entities, stats, quotes, timelines
+- **Quality Evaluation**: Confidence scoring with iteration loop
+- **Smart Synthesis**: Generate comprehensive answers with citations
+
+### 🌐 Real-Time Content Intelligence
+
+```python
+# GitHub Trending with AI-powered extraction
+result = await smart_fetch("https://github.com/trending", follow_depth=2)
+
+# Returns structured data automatically:
+# {
+#   "github_repos": [
+#     {"owner": "mattpocock", "repo": "skills", "today_stars": "1959", ...},
+#     ...
+#   ],
+#   "followed_urls": [...],
+#   "extracted_data": {...}
+# }
+```
+
+---
+
+## 🚀 Quick Start
+
+### 1. Install
 
 ```bash
-# Clone the repository
-git clone https://github.com/yourusername/websearch-mcp.git
+# Clone and install
+git clone https://github.com/lingfan36/websearch-mcp.git
 cd websearch-mcp
-
-# Install dependencies
 pip install -e .
 
-# Or use uvx (no installation required)
+# Or use uvx (zero installation)
 uvx websearch-mcp
 ```
 
-## Configuration
-
-### Environment Variables
-
-Create a `.env` file based on `.env.example`:
-
-```env
-# Ollama Configuration
-OLLAMA_API_URL=http://localhost:11434/v1/chat/completions
-OLLAMA_MODEL=qwen2.5:1.5b
-OLLAMA_TIMEOUT=120
-
-# Typesense Configuration
-TYPESENSE_HOST=localhost
-TYPESENSE_PORT=8100
-TYPESENSE_KEY=
-
-# Crawler Configuration
-CRAWL_DELAY=1.0
-CRAWL_CONCURRENCY=3
-```
-
-### Ollama Setup
+### 2. Setup Ollama
 
 ```bash
 # Install Ollama
 curl -fsSL https://ollama.com/install.sh | sh
 
-# Pull the default model (qwen2.5:1.5b)
+# Pull the default model
 ollama pull qwen2.5:1.5b
-
-# Or use a different model
-ollama pull llama3.2
 ```
 
-### Typesense Setup (Optional - for web_search)
+### 3. Run
 
 ```bash
-# Install Typesense
-docker run -d -p 8108:8108 typesense/typesense:latest \
-  --data-dir /tmp/typesense-data \
-  --api-key=your-api-key
+# Start the MCP server
+python -m websearch_mcp.server
 
-# Index your content (see CLI tools)
-python -m websearch_mcp.cli index --help
+# Or use CLI
+websearch --query "What is machine learning?"
 ```
 
-## Usage
+---
 
-### As MCP Server (for Claude Code)
+## 📖 Usage
 
-Add to your Claude Code MCP settings:
+### As MCP Server (Claude Code, Cursor, etc.)
+
+Add to your MCP settings:
 
 ```json
 {
@@ -137,70 +116,57 @@ import asyncio
 from websearch_mcp import run_search, fetch_and_extract, smart_fetch
 
 async def main():
-    # Deep search (uses indexed data)
-    result = await run_search("What is machine learning?")
+    # Deep research (uses indexed data)
+    result = await run_search("What is deep learning?")
     print(result["answer"])
 
-    # Direct fetch (real-time)
-    content = await fetch_and_extract("https://github.com/trending")
+    # Real-time fetch
+    content = await fetch_and_extract("https://news.ycombinator.com")
 
-    # Smart fetch with insights
-    result = await smart_fetch("https://github.com/trending", follow_depth=2)
+    # Smart fetch with AI insights
+    data = await smart_fetch("https://github.com/trending", follow_depth=2)
 
 asyncio.run(main())
 ```
 
-### CLI Tools
+---
 
-```bash
-# Index a URL
-python -m websearch_mcp.cli index https://example.com
+## 🛠️ Tools Reference
 
-# Search indexed content
-python -m websearch_mcp.cli search "machine learning"
-
-# Crawl a website (BFS)
-python -m websearch_mcp.cli crawl https://example.com --max-pages 100
-
-# Start the MCP server
-python -m websearch_mcp.server
-```
-
-## Tools Reference
-
-### web_search
+### `web_search`
 
 ```json
 {
-  "query": "What is deep learning?",
-  "depth": "balanced"  // "quick" | "balanced" | "deep"
+  "query": "Explain neural networks",
+  "depth": "balanced"
 }
 ```
 
-Returns:
+**Response:**
 ```json
 {
-  "answer": "Deep learning is...",
-  "citations": [{"text": "...", "url": "...", "title": "..."}],
+  "answer": "# Neural Networks\n\nNeural networks are...",
   "confidence": 0.95,
+  "citations": [
+    {"text": "...", "url": "https://...", "title": "..."}
+  ],
   "key_findings": ["...", "..."],
-  "iterations_used": 1,
   "status": "success"
 }
 ```
 
-### fetch
+### `fetch`
 
 ```json
 {
-  "url": "https://news.ycombinator.com/",
+  "url": "https://example.com",
   "max_length": 5000,
   "start_index": 0,
   "raw": false
 }
 ```
 
-### fetch_with_insights
+### `fetch_with_insights`
 
 ```json
 {
@@ -210,41 +176,122 @@ Returns:
 }
 ```
 
-Returns:
-```json
-{
-  "url": "https://github.com/trending",
-  "content": "...",
-  "github_repos": [
-    {"owner": "mattpocock", "repo": "skills", "today_stars": "1959", ...}
-  ],
-  "followed_urls": [...],
-  "extracted_data": {"title": "...", "key_points": [...]}
-}
+---
+
+## 🏗️ Architecture
+
+```
+┌────────────────────────────────────────────────────────────────┐
+│                        WebSearch MCP                          │
+├────────────────────────────────────────────────────────────────┤
+│                                                                │
+│    ┌──────────────┐   ┌──────────────┐   ┌──────────────────┐ │
+│    │  web_search  │   │    fetch    │   │ fetch_with_insights│
+│    │   (deep)     │   │  (realtime)  │   │  (smart crawl)   │ │
+│    └──────┬───────┘   └──────┬───────┘   └────────┬─────────┘ │
+│           │                  │                     │           │
+│           └──────────────────┼─────────────────────┘           │
+│                              │                                 │
+│                    ┌─────────▼─────────┐                      │
+│                    │   Pipeline Nodes   │                      │
+│                    │  Rewriter          │                      │
+│                    │  Search           │                      │
+│                    │  Extractor        │                      │
+│                    │  Evaluator        │                      │
+│                    │  Synthesizer      │                      │
+│                    └─────────┬─────────┘                      │
+│                              │                                 │
+│           ┌──────────────────┼──────────────────┐             │
+│           ▼                  ▼                  ▼             │
+│    ┌────────────┐    ┌────────────┐    ┌────────────┐       │
+│    │  Typesense │    │ Trafilatura │    │   Ollama   │       │
+│    │   Index    │    │   Crawler   │    │    LLM     │       │
+│    └────────────┘    └────────────┘    └────────────┘       │
+│                                                                │
+└────────────────────────────────────────────────────────────────┘
 ```
 
-## Requirements
+---
 
-- Python 3.10+
-- [Ollama](https://ollama.com/) (local LLM server)
-- Optional: Typesense (for indexed search)
-- Optional: Node.js (for better HTML extraction with Readability.js)
+## 📦 Tech Stack
 
-## Dependencies
+| Component | Technology |
+|-----------|------------|
+| **Protocol** | Model Context Protocol (MCP) |
+| **Framework** | mcp-python-sdk |
+| **LLM** | Ollama (local, OpenAI-compatible) |
+| **Search** | Typesense |
+| **Crawling** | Trafilatura + Readabilipy |
+| **Markdown** | Markdownify |
+| **Data** | Pydantic v2 |
 
-- `mcp` - MCP server framework
-- `httpx` - HTTP client
-- `trafilatura` - HTML content extraction
-- `readabilipy` - Readability-based extraction
-- `markdownify` - HTML to markdown conversion
-- `typesense` - Search engine
-- `structlog` - Structured logging
-- `pydantic` - Data validation
+---
 
-## License
+## 🔧 Configuration
 
-MIT
+Create `.env` from `.env.example`:
 
-## Contributing
+```bash
+cp .env.example .env
+```
 
-Contributions welcome! Please read the spec in `SPEC.md` first.
+```env
+# Ollama
+OLLAMA_URL=http://localhost:11434/v1/chat/completions
+OLLAMA_MODEL=qwen2.5:1.5b
+OLLAMA_TIMEOUT=120
+
+# Typesense (optional)
+TYPESENSE_HOST=localhost
+TYPESENSE_PORT=8108
+TYPESENSE_KEY=
+
+# Crawler
+CRAWL_DELAY=1.0
+CRAWL_CONCURRENCY=3
+```
+
+---
+
+## 🤝 Contributing
+
+Contributions welcome! Please read [SPEC.md](./SPEC.md) first.
+
+```bash
+# Development setup
+git clone https://github.com/lingfan36/websearch-mcp.git
+cd websearch-mcp
+pip install -e ".[dev]"
+
+# Run tests
+pytest
+```
+
+---
+
+## 📊 Why This Project?
+
+| Feature | OpenAI | Tavily | **WebSearch MCP** |
+|---------|--------|--------|-------------------|
+| Self-hosted | ❌ | ❌ | ✅ |
+| Local LLM | ❌ | ❌ | ✅ |
+| No API costs | ❌ | ❌ | ✅ |
+| Fully customizable | ❌ | ❌ | ✅ |
+| MCP protocol | ❌ | ✅ | ✅ |
+| Real-time fetch | ❌ | ✅ | ✅ |
+
+---
+
+## 📄 License
+
+MIT © [Ling Fan](https://github.com/lingfan36)
+
+---
+
+<div align="center">
+
+**⭐ Star this repo if you find it useful!**
+
+*[Powered by Ollama + MCP + Python]*
+
+</div>
