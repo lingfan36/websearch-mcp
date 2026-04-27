@@ -1,0 +1,49 @@
+"""Configuration management for WebSearch MCP."""
+
+from __future__ import annotations
+
+import os
+from typing import Any
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    """Application settings."""
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
+    # LLM
+    ollama_url: str = "http://localhost:11434/v1/chat/completions"
+    ollama_model: str = "qwen2.5"
+    llm_timeout: float = 60.0
+
+    # Typesense
+    typesense_host: str = "localhost"
+    typesense_port: int = 8108
+    typesense_api_key: str = "xyz"
+    typesense_collection: str = "webpages"
+
+    # Crawler
+    crawler_timeout: float = 30.0
+    crawler_max_depth: int = 1
+    crawler_delay: float = 1.0  # 请求间隔（秒）
+
+    # Search
+    max_search_results: int = 10
+
+    # Pipeline
+    max_iterations: int = 3
+    confidence_threshold: float = 0.7
+
+    @property
+    def typesense_url(self) -> str:
+        return f"http://{self.typesense_host}:{self.typesense_port}"
+
+
+def get_settings() -> Settings:
+    """Get settings singleton."""
+    return Settings()
