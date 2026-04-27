@@ -340,11 +340,24 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
         raise ValueError(f"Unknown tool: {name}")
 
 
-async def main():
-    """Main entry point."""
+def main():
+    """Main entry point — sync wrapper for MCP server."""
+    import asyncio
     import logging
+    import sys
+
+    # Windows UTF-8 fix
+    if sys.platform == "win32":
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
     logging.basicConfig(level=logging.INFO)
 
+    asyncio.run(_serve())
+
+
+async def _serve():
+    """Async server entry point."""
     async with stdio_server() as (read_stream, write_stream):
         await server.run(
             read_stream,
@@ -354,5 +367,4 @@ async def main():
 
 
 if __name__ == "__main__":
-    import asyncio
-    asyncio.run(main())
+    main()

@@ -78,7 +78,9 @@ uvx websearch-mcp
 
 ```bash
 # Install Ollama and pull a model
-curl -fsSL https://ollama.com/install.sh | sh
+curl -fsSL https://ollama.com/install.sh | sh   # Linux/macOS
+# or download from https://ollama.com/download    # Windows
+
 ollama pull qwen2.5:1.5b
 ```
 
@@ -90,7 +92,24 @@ That's it. No API keys. No cloud accounts.
 
 ### In Claude Code / Cursor / Any MCP Client
 
-Add to your MCP config:
+**Option A: pip install (Recommended)**
+
+```bash
+pip install -e /path/to/websearch-mcp
+```
+
+```json
+{
+  "mcpServers": {
+    "websearch": {
+      "command": "python",
+      "args": ["-m", "websearch_mcp"]
+    }
+  }
+}
+```
+
+**Option B: uvx (if available)**
 
 ```json
 {
@@ -98,6 +117,19 @@ Add to your MCP config:
     "websearch": {
       "command": "uvx",
       "args": ["websearch-mcp"]
+    }
+  }
+}
+```
+
+**Option C: Direct path**
+
+```json
+{
+  "mcpServers": {
+    "websearch": {
+      "command": "python",
+      "args": ["D:/webSearch/src/websearch_mcp/server.py"]
     }
   }
 }
