@@ -21,29 +21,26 @@ Open-source, self-hosted, MCP-native.
 
 ## Why WebSearch MCP?
 
-Your AI coding assistant (Claude Code, Cursor, Cline...) can't search the web natively. This MCP server fills that gap with a complete web intelligence stack:
+Most AI coding assistants are blind to the web. They can't search, can't read URLs, can't compare information across pages. WebSearch MCP fixes that with one self-hosted server and zero API fees.
 
-**Instant search** — Web queries return structured results in seconds, no local LLM required.
-
-**Smart fetching** — Three-layer fallback handles any website, including Cloudflare-protected pages.
-
-**Deep research** — Multi-step pipeline that rewrites queries, extracts facts, evaluates quality, and synthesizes answers.
-
-**Privacy-first** — Self-hosted. Your data stays on your machine. Optional cloud APIs for enhanced speed.
-
-<br>
+<div align="center">
 
 | | Tavily | Serper | Exa | **WebSearch MCP** |
 |:---|:---:|:---:|:---:|:---:|
 | Self-hosted | | | | **Y** |
-| Free tier forever | | | | **Y** |
+| Zero cost, forever | | | | **Y** |
+| Full privacy — no data leaves your machine | | | | **Y** |
 | MCP native | Y | Y | Y | **Y** |
-| Three-layer fetch | | | | **Y** |
-| Deep research pipeline | | | | **Y** |
-| Smart link following | | | | **Y** |
-| Browser fallback (Cloudflare) | | | | **Y** |
-| Batch parallel fetching | | | | **Y** |
+| Search the web (no LLM needed) | Y | Y | Y | **Y** |
+| Fetch any URL → clean markdown | Y | | Y | **Y** |
+| Auto-fallback on blocked sites | | | | **Y** |
+| Headless browser for Cloudflare / JS pages | | | | **Y** |
+| Batch fetch 10 URLs in parallel | | | | **Y** |
+| Deep research with quality evaluation | | | | **Y** |
+| Smart link following & data extraction | | | | **Y** |
 | Works fully offline | | | | **Y** |
+
+</div>
 
 ---
 
