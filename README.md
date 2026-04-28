@@ -1,312 +1,285 @@
 <div align="center">
 
-# 🔎 WebSearch MCP
+<img src="https://img.icons8.com/3d-fluency/94/search.png" width="80" />
 
-**Self-hosted Tavily alternative. One MCP server, five tools.**
+# WebSearch MCP
 
-[![GitHub stars](https://img.shields.io/github/stars/lingfan36/websearch-mcp?style=for-the-badge&logo=github)](https://github.com/lingfan36/websearch-mcp/stargazers)
-[![PyPI](https://img.shields.io/badge/Python-3.10+-for-the-badge?style=for-the-badge&logo=python&logoColor=white)](https://python.org)
-[![MCP](https://img.shields.io/badge/MCP-Compatible-blue?style=for-the-badge)](https://modelcontextprotocol.org/)
-[![License](https://img.shields.io/badge/License-MIT-purple?style=for-the-badge)](LICENSE)
+**Give your AI agent the ability to search and read the web.**
 
-[English](#) · [中文文档](#-中文) · [Report Bug](https://github.com/lingfan36/websearch-mcp/issues) · [Request Feature](https://github.com/lingfan36/websearch-mcp/issues)
+Open-source, self-hosted, MCP-native.
+
+[![PyPI](https://img.shields.io/badge/Python-3.10%2B-3776AB?style=flat-square&logo=python&logoColor=white)](https://python.org)
+[![MCP](https://img.shields.io/badge/MCP-Compatible-0EA5E9?style=flat-square)](https://modelcontextprotocol.io/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-9333EA?style=flat-square)](LICENSE)
+[![GitHub stars](https://img.shields.io/github/stars/lingfan36/websearch-mcp?style=flat-square)](https://github.com/lingfan36/websearch-mcp/stargazers)
+
+[Getting Started](#-getting-started) · [Tools](#-tools) · [Architecture](#-architecture) · [Configuration](#-configuration)
 
 </div>
 
 ---
 
-## The Problem
+## Why WebSearch MCP?
 
-Every AI agent needs web search. But existing solutions have tradeoffs:
+Your AI coding assistant (Claude Code, Cursor, Cline...) can't search the web natively. This MCP server fills that gap with a complete web intelligence stack:
 
-| | OpenAI Search | Tavily | Serper | **WebSearch MCP** |
-|---|---|---|---|---|
-| Self-hosted | ❌ | ❌ | ❌ | ✅ |
-| Zero API cost | ❌ | ❌ | ❌ | ✅* |
-| Privacy-first | ❌ | ❌ | ❌ | ✅ |
-| MCP native | ❌ | ✅ | ✅ | ✅ |
-| Deep research pipeline | ❌ | ❌ | ❌ | ✅ |
-| Smart link following | ❌ | ❌ | ❌ | ✅ |
-| Three-layer fetch fallback | ❌ | ❌ | ❌ | ✅ |
-| Works offline | ❌ | ❌ | ❌ | ✅ |
+**Instant search** — Web queries return structured results in seconds, no local LLM required.
 
-> *Deep research uses local Ollama (free). Jina Reader/Search API has a generous free tier.
+**Smart fetching** — Three-layer fallback handles any website, including Cloudflare-protected pages.
 
----
+**Deep research** — Multi-step pipeline that rewrites queries, extracts facts, evaluates quality, and synthesizes answers.
 
-## 🎯 Five Tools, One Server
+**Privacy-first** — Self-hosted. Your data stays on your machine. Optional cloud APIs for enhanced speed.
 
-### `web_search_quick` — Instant Web Search
+<br>
 
-> Query → Jina Search API → structured results in ~3 seconds. No local LLM needed.
-
-```
-Input:  "Python web framework 2026"
-Output: [{title, url, snippet}, ...] — optionally with full content of top 3 results
-```
-
-### `web_search` — Deep Research Pipeline
-
-> Ask a question → AI rewrites into sub-queries → parallel search → extract facts → evaluate quality → synthesize answer
-
-```
-Input:  "What are the latest breakthroughs in quantum computing?"
-Output: Structured answer with citations, confidence: 0.95
-```
-
-### `fetch` — Smart URL Fetching
-
-> Three-layer fallback: Jina Reader → local parser → Playwright browser. Handles Cloudflare, CAPTCHAs, and protected sites.
-
-```
-Input:  "https://news.ycombinator.com"
-Output: Clean markdown of the front page
-```
-
-### `fetch_batch` — Parallel URL Fetching
-
-> Fetch up to 10 URLs concurrently with the same three-layer fallback.
-
-```
-Input:  ["https://github.com", "https://reddit.com", "https://news.ycombinator.com"]
-Output: [{url, content}, ...] — all fetched in parallel
-```
-
-### `fetch_with_insights` — Smart Crawling
-
-> Fetch page → detect patterns → follow relevant links → extract structured data
-
-```
-Input:  "https://github.com/trending"
-Output: 13 trending repos with stars, descriptions, and followed details
-```
+| | Tavily | Serper | Exa | **WebSearch MCP** |
+|:---|:---:|:---:|:---:|:---:|
+| Self-hosted | | | | **Y** |
+| Free tier forever | | | | **Y** |
+| MCP native | Y | Y | Y | **Y** |
+| Three-layer fetch | | | | **Y** |
+| Deep research pipeline | | | | **Y** |
+| Smart link following | | | | **Y** |
+| Browser fallback (Cloudflare) | | | | **Y** |
+| Batch parallel fetching | | | | **Y** |
+| Works fully offline | | | | **Y** |
 
 ---
 
-## 🚀 Install
+## Tools
+
+### `web_search_quick`
+
+Instant web search via Jina Search API. No local LLM, no waiting.
+
+```
+"What are the best Python web frameworks in 2026"
+→ 5 results with titles, URLs, and snippets in ~3 seconds
+```
+
+Optional: set `fetch_content: true` to auto-fetch full content of the top 3 results in parallel.
+
+### `fetch`
+
+Fetch any URL and get clean markdown back. Three-layer fallback means it just works:
+
+1. **Jina Reader** — Fast, high-quality extraction via API
+2. **Local parser** — readabilipy + markdownify, no network dependency
+3. **Playwright browser** — Headless Chromium for JavaScript-heavy and protected sites
+
+```
+"https://github.com/trending"
+→ Full markdown content, automatically extracted
+```
+
+### `fetch_batch`
+
+Fetch up to 10 URLs concurrently. Same three-layer fallback per URL.
+
+```
+["https://github.com", "https://reddit.com", "https://news.ycombinator.com"]
+→ All results fetched in parallel
+```
+
+### `web_search`
+
+Deep research pipeline powered by local LLM:
+
+```
+"What are the latest breakthroughs in quantum computing?"
+→ Structured answer with citations, confidence score, key findings
+```
+
+### `fetch_with_insights`
+
+Smart crawler that follows links and extracts structured data:
+
+```
+"https://github.com/trending"
+→ Repos with stars, descriptions — and auto-follows top repos for details
+```
+
+---
+
+## Architecture
+
+### Three-Layer Fetch Engine
+
+The core innovation. Every URL fetch goes through three layers, automatically falling back when needed:
+
+```
+   URL
+    │
+    ▼
+┌─────────────────────────────────────────────────────┐
+│  Layer 1: Jina Reader API                           │
+│  Fast, clean markdown from any URL                  │
+│  ────────────────────────                           │
+│  ✅ Success → return markdown                       │
+│  ❌ Fail → Layer 2                                  │
+└──────────────────────┬──────────────────────────────┘
+                       │
+                       ▼
+┌─────────────────────────────────────────────────────┐
+│  Layer 2: Local HTTP + readabilipy                  │
+│  Direct fetch, no external API needed               │
+│  ────────────────────────                           │
+│  ✅ Success → return markdown                       │
+│  ⚠️  Access denied (403/Cloudflare) → Layer 3      │
+│  ❌ Other error → raise                             │
+└──────────────────────┬──────────────────────────────┘
+                       │
+                       ▼
+┌─────────────────────────────────────────────────────┐
+│  Layer 3: Playwright Headless Browser               │
+│  Real Chromium — bypasses JS challenges & captchas  │
+│  Blocks images/styles/fonts for speed               │
+│  ────────────────────────                           │
+│  ✅ Success → return markdown                       │
+│  ❌ Fail → raise original error                     │
+└─────────────────────────────────────────────────────┘
+```
+
+### Deep Research Pipeline
+
+```
+ Query ──▶ Rewrite ──▶ Search ──▶ Extract ──▶ Evaluate ─┐
+             │           │          │           │         │
+             │           │          │           │         │
+             ▼           ▼          ▼           ▼         │
+         Sub-queries  Parallel   Facts     Sufficient?   │
+                                       │           │     │
+                                    Yes │        No │     │
+                                       ▼           │     │
+                                   Synthesize ─────┘─────┘
+                                       │
+                                       ▼
+                              Answer + Citations
+```
+
+---
+
+## Getting Started
+
+### 1. Install
 
 ```bash
-# Option 1: pip
 pip install -e .
+```
 
-# Option 2: uvx (recommended, zero install)
+Or use `uvx` for zero-install:
+```bash
 uvx websearch-mcp
 ```
 
-### Requirements
+### 2. Configure your MCP client
+
+Add to your Claude Code, Cursor, or other MCP client config:
+
+```json
+{
+  "websearch": {
+    "command": "websearch-mcp",
+    "env": {
+      "JINA_API_KEY": "jina_your_key_here"
+    }
+  }
+}
+```
+
+That's it. The `fetch`, `fetch_batch`, and `web_search_quick` tools work immediately.
+
+### 3. Optional: Deep research with local LLM
+
+For the `web_search` deep research pipeline, install Ollama:
 
 ```bash
-# Install Ollama and pull a model (for web_search deep research)
-curl -fsSL https://ollama.com/install.sh | sh   # Linux/macOS
-# or download from https://ollama.com/download    # Windows
-
+# Install Ollama: https://ollama.com/download
 ollama pull qwen2.5:1.5b
-
-# Optional: Jina API key for higher rate limits
-# Get free key at https://jina.ai/api-dashboard/
-# Not required — works without it at lower rate limits
 ```
 
----
+### 4. Optional: Browser fallback
 
-## 💡 Quick Demo
-
-### In Claude Code / Cursor / Any MCP Client
-
-**Option A: pip install (Recommended)**
-
-```bash
-pip install -e /path/to/websearch-mcp
-```
-
-```json
-{
-  "mcpServers": {
-    "websearch": {
-      "command": "python",
-      "args": ["-m", "websearch_mcp"],
-      "env": {
-        "JINA_API_KEY": "jina_your_key_here"
-      }
-    }
-  }
-}
-```
-
-**Option B: uvx (if available)**
-
-```json
-{
-  "mcpServers": {
-    "websearch": {
-      "command": "uvx",
-      "args": ["websearch-mcp"]
-    }
-  }
-}
-```
-
-Then your AI agent can search the web:
-
-```
-You: What GitHub repos are trending today?
-
-Agent: Let me check...
-→ calls fetch_with_insights("https://github.com/trending")
-
-📊 Today's Top Trending Repos:
-
-| # | Repository | Language | Stars Today |
-|---|-----------|----------|-------------|
-| 1 | mattpocock/skills | Shell | +1,959 |
-| 2 | Alishahryar1/free-claude-code | Python | +1,978 |
-| 3 | Z4nzu/hackingtool | Python | +7,367 |
-| 4 | abhigyanpatwari/GitNexus | TypeScript | +3,499 |
-| 5 | microsoft/typescript-go | Go | +922 |
-```
-
-### As Python Library
-
-```python
-import asyncio
-from websearch_mcp.fetch import search_web, fetch_and_extract
-
-async def main():
-    # Quick web search (no LLM needed)
-    results = await search_web("Python web framework 2026", max_results=5)
-    for r in results:
-        print(f"{r['title']} — {r['url']}")
-
-    # Fetch a URL with three-layer fallback
-    content = await fetch_and_extract("https://github.com/trending", max_length=5000)
-    print(content)
-
-asyncio.run(main())
-```
-
----
-
-## 🧠 How It Works
-
-### Three-Layer Fetch Fallback
-
-```
-┌──────────────┐     ┌──────────────┐     ┌──────────────┐
-│  Jina Reader  │────▶│  Local Parser │────▶│  Playwright  │
-│  (fast, API)  │     │ (readabilipy) │     │  (browser)   │
-└──────────────┘     └──────────────┘     └──────────────┘
-        │                    │                     │
-   Success ✅          Success ✅          For protected sites
-   or fallback          or fallback         (Cloudflare, etc.)
-```
-
-### web_search Pipeline
-
-```
-┌──────────┐    ┌───────────┐    ┌───────────┐    ┌───────────┐
-│  Rewrite  │───▶│   Search   │───▶│  Extract   │───▶│  Evaluate  │
-│  Query    │    │  Parallel  │    │   Facts    │    │  Quality   │
-└──────────┘    └───────────┘    └───────────┘    └─────┬─────┘
-                                                         │
-                                              ┌──────────▼──────────┐
-                                              │  Sufficient?        │
-                                              │  Yes → Synthesize   │
-                                              │  No  → Loop back    │
-                                              └─────────────────────┘
-```
-
-Quick mode skips Rewrite and Evaluate for faster results.
-
-### fetch_with_insights Pipeline
-
-```
-┌─────────┐    ┌──────────────┐    ┌──────────────┐    ┌─────────────┐
-│  Fetch   │───▶│   Detect     │───▶│   Follow     │───▶│  Extract    │
-│  Page    │    │   Patterns   │    │   Links      │    │  Structure  │
-└─────────┘    └──────────────┘    └──────────────┘    └─────────────┘
-                     │
-                     ▼
-              ┌──────────────┐
-              │ GitHub repos │ → Auto-parse repos, stars, descriptions
-              │ News sites   │ → Extract articles, dates, authors
-              │ Docs sites   │ → Follow sections, build index
-              └──────────────┘
-```
-
----
-
-## 🔧 Configuration
-
-```bash
-cp .env.example .env   # or create .env manually
-```
-
-```env
-# Core — Required for web_search (deep research)
-OLLAMA_URL=http://localhost:11434/v1/chat/completions
-OLLAMA_MODEL=qwen2.5:1.5b
-
-# Search Index — Optional (without it, only fetch/search tools work)
-TYPESENSE_HOST=localhost
-TYPESENSE_PORT=8108
-
-# Jina API — Optional (works without key at lower rate limits)
-JINA_API_KEY=jina_xxxxx
-
-# Fetch Strategy
-USE_JINA_READER=true          # Use Jina Reader as first fetch layer
-USE_BROWSER_FALLBACK=false    # Enable Playwright for protected sites
-
-# Performance
-LLM_TIMEOUT=30
-CRAWL_CONCURRENCY=3
-```
-
-### Optional: Playwright Browser Fallback
-
-For sites behind Cloudflare, CAPTCHAs, or other access restrictions:
+For Cloudflare-protected and JavaScript-heavy sites:
 
 ```bash
 pip install playwright
 playwright install chromium
 ```
 
-Then set `USE_BROWSER_FALLBACK=true` in your `.env`.
+Set `USE_BROWSER_FALLBACK=true` in your `.env`.
 
 ---
 
-## 📦 Tech Stack
+## Configuration
 
-<p align="center">
+All settings are optional with sensible defaults. Configure via `.env` file or environment variables:
 
-| Layer | Choice | Why |
-|-------|--------|-----|
-| Protocol | **MCP** | Industry standard for AI tooling |
-| Fast Search | **Jina Search API** | Instant results, no LLM needed |
-| URL Reader | **Jina Reader** | High-quality HTML → Markdown |
-| LLM | **Ollama** | Free, local, private |
-| Search Index | **Typesense** | Fast, typo-tolerant, self-hosted |
-| Crawler | **Trafilatura** | Best open-source content extractor |
-| Reader | **Readability + Markdownify** | Clean HTML → Markdown |
-| Browser | **Playwright** (optional) | Handles protected sites |
-| Validation | **Pydantic v2** | Type-safe data models |
+```env
+# ── Fetch Engine ──────────────────────────────────
+JINA_API_KEY=                    # Optional. Free tier works without key.
+USE_JINA_READER=true             # Jina Reader as first fetch layer
+USE_BROWSER_FALLBACK=false       # Playwright for protected sites
 
-</p>
+# ── Deep Research (web_search tool) ───────────────
+OLLAMA_URL=http://localhost:11434/v1/chat/completions
+OLLAMA_MODEL=qwen2.5:1.5b
+LLM_TIMEOUT=30
 
----
+# ── Search Index ──────────────────────────────────
+TYPESENSE_HOST=localhost
+TYPESENSE_PORT=8108
+TYPESENSE_API_KEY=xyz
 
-## 🗺️ Roadmap
-
-- [ ] **Web UI** — Built-in dashboard for search history and traces
-- [ ] **Streaming** — Real-time streaming responses for web_search
-- [ ] **Cache Layer** — Redis-based caching for repeated queries
-- [ ] **Multi-model** — Support for GPT-4, Claude, Gemini as backends
-- [ ] **Plugin System** — Custom extractors for specific sites
-- [ ] **Docker Compose** — One-command deployment with Typesense
+# ── Crawler ───────────────────────────────────────
+CRAWL_CONCURRENCY=3
+CRAWLER_MAX_DEPTH=1
+```
 
 ---
 
-## 🤝 Contributing
+## Python Library
+
+You can also use it directly in Python:
+
+```python
+import asyncio
+from websearch_mcp.fetch import search_web, fetch_and_extract
+
+async def main():
+    # Quick web search
+    results = await search_web("best Python ORM 2026")
+    for r in results:
+        print(f"  {r['title']}")
+        print(f"  {r['url']}")
+
+    # Fetch a URL
+    content = await fetch_and_extract("https://github.com/trending")
+    print(content[:500])
+
+asyncio.run(main())
+```
+
+---
+
+## Tech Stack
+
+| Layer | Technology |
+|:------|:-----------|
+| Protocol | [MCP](https://modelcontextprotocol.io/) |
+| Search API | [Jina Search](https://jina.ai/search/) |
+| URL Reader | [Jina Reader](https://jina.ai/reader/) + [readabilipy](https://github.com/alanmcruickshank/readabilipy) |
+| LLM | [Ollama](https://ollama.ai/) (OpenAI-compatible) |
+| Search Index | [Typesense](https://typesense.org/) |
+| Crawler | [trafilatura](https://trafilatura.readthedocs.io/) |
+| Browser | [Playwright](https://playwright.dev/) (optional) |
+| HTML → Markdown | [markdownify](https://github.com/matthewwithanm/python-markdownify) |
+| Validation | [Pydantic v2](https://docs.pydantic.dev/) |
+
+---
+
+## Contributing
 
 ```bash
 git clone https://github.com/lingfan36/websearch-mcp.git
@@ -315,20 +288,14 @@ pip install -e ".[dev]"
 pytest
 ```
 
-PRs welcome. See [SPEC.md](./SPEC.md) for design docs.
-
----
-
-## 📄 License
-
-MIT © [Ling Fan](https://github.com/lingfan36)
+PRs welcome.
 
 ---
 
 <div align="center">
 
-**If this project helps you, give it a ⭐**
+**MIT License** · Made with care by [Ling Fan](https://github.com/lingfan36)
 
-It helps others discover it. Thank you!
+Found it useful? **[Star this repo](https://github.com/lingfan36/websearch-mcp/stargazers)** — it helps others find it.
 
 </div>
