@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import sys
 from typing import Any
@@ -21,6 +22,36 @@ async def list_tools() -> list[Tool]:
     """List available tools."""
     return [
         Tool(
+            name="web_search_quick",
+            description="""Fast web search using Jina Search API. No local LLM needed.
+
+Returns search results with titles, URLs, and snippets instantly.
+Optionally fetches top results' full content.
+
+**Best for:** Quick lookups, finding specific information, comparing sources.
+**For deep research:** Use `web_search` instead.""",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Search query",
+                    },
+                    "max_results": {
+                        "type": "integer",
+                        "default": 10,
+                        "description": "Max search results (1-10)",
+                    },
+                    "fetch_content": {
+                        "type": "boolean",
+                        "default": False,
+                        "description": "Fetch full content of top 3 results",
+                    },
+                },
+                "required": ["query"],
+            },
+        ),
+        Tool(
             name="web_search",
             description="""Deep research pipeline using indexed knowledge base.
 
@@ -28,7 +59,7 @@ Searches a pre-built index, uses query rewriting, fact extraction, quality
 evaluation, and multi-source synthesis.
 
 **Best for:** Complex research, multi-topic synthesis.
-**For real-time data:** Use `fetch` or `fetch_with_insights` instead.
+**For fast searches:** Use `web_search_quick` instead.
 
 Returns: answer, citations, confidence (0-1), key_findings.""",
             inputSchema={
@@ -50,6 +81,8 @@ Returns: answer, citations, confidence (0-1), key_findings.""",
         Tool(
             name="fetch",
             description="""Fetch a URL and return content as markdown.
+
+Uses three-layer fallback: Jina Reader → local parser → Playwright browser.
 
 **Best for:** Real-time data, specific URLs, trending topics.
 Supports max_length, start_index (pagination), raw mode.""",
@@ -82,13 +115,61 @@ E.g. GitHub trending → auto-parse repos, stars, descriptions.
                 "required": ["url"],
             },
         ),
+        Tool(
+            name="fetch_batch",
+            description="""Batch fetch multiple URLs concurrently.
+
+Fetches up to 10 URLs in parallel and returns all results.
+Each URL uses the same three-layer fallback as `fetch`.
+
+**Best for:** Comparing multiple pages, gathering data from several sources.""",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "urls": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "URLs to fetch (max 10)",
+                    },
+                    "max_length": {
+                        "type": "integer",
+                        "default": 3000,
+                        "description": "Max chars per URL",
+                    },
+                },
+                "required": ["urls"],
+            },
+        ),
     ]
 
 
 @server.call_tool()
 async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
     """Handle tool calls — heavy imports happen here, not at startup."""
-    if name == "web_search":
+    if name == "web_search_quick":
+        from .fetch import search_web, fetch_and_extract
+        query = arguments.get("query", "")
+        max_results = min(arguments.get("max_results", 10), 10)
+        fetch_content = arguments.get("fetch_content", False)
+
+        results = await search_web(query, max_results=max_results)
+
+        if fetch_content and results:
+            async def _fetch_one(r: dict[str, Any]) -> None:
+                try:
+                    content, _ = await fetch_and_extract(r["url"], max_length=3000, check_robots=False)
+                    r["content"] = content[:3000]
+                except Exception as e:
+                    r["content"] = f"<error>{e}</error>"
+
+            await asyncio.gather(*[_fetch_one(r) for r in results[:3]])
+
+        return [TextContent(
+            type="text",
+            text=json.dumps(results, ensure_ascii=False, indent=2),
+        )]
+
+    elif name == "web_search":
         from .search_handler import handle_web_search
         result = await handle_web_search(
             query=arguments.get("query", ""),
@@ -119,6 +200,24 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
         return [TextContent(
             type="text",
             text=json.dumps(result, ensure_ascii=False, indent=2),
+        )]
+
+    elif name == "fetch_batch":
+        from .fetch import fetch_and_extract
+        urls = arguments.get("urls", [])[:10]
+        max_length = arguments.get("max_length", 3000)
+
+        async def _fetch_one(u: str) -> dict[str, Any]:
+            try:
+                content = await fetch_and_extract(u, max_length=max_length, check_robots=True)
+                return {"url": u, "success": True, "content": content}
+            except Exception as e:
+                return {"url": u, "success": False, "error": str(e)}
+
+        results = await asyncio.gather(*[_fetch_one(u) for u in urls])
+        return [TextContent(
+            type="text",
+            text=json.dumps(list(results), ensure_ascii=False, indent=2),
         )]
 
     else:

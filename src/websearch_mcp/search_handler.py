@@ -21,7 +21,7 @@ async def handle_web_search(
     from .nodes.extractor import ExtractorNode
     from .nodes.evaluator import EvaluatorNode
     from .nodes.synthesizer import SynthesizerNode
-    from .schema import SearchSession, SearchDepth, RewrittenQuery
+    from .schema import SearchSession, SearchDepth, RewrittenQuery, RewriterOutput
     from .trace import create_trace_manager
 
     llm = create_llm_client()
@@ -29,71 +29,104 @@ async def handle_web_search(
     rewriter = RewriterNode(llm)
     searcher = SearchNode()
     extractor = ExtractorNode(llm)
-    evaluator = EvaluatorNode(llm)
     synthesizer = SynthesizerNode(llm)
 
     session_id = str(uuid.uuid4())
     session = SearchSession(
         id=session_id,
         original_query=query,
-        max_iterations=3,
+        max_iterations=1 if depth == "quick" else 3,
     )
     trace = create_trace_manager(session_id)
 
     logger.info("search_session_start", session_id=session_id, query=query, depth=depth)
 
     try:
-        # Step 1: Rewrite
-        rewriter_output = await rewriter.run(query, trace)
+        # Step 1: Rewrite (skip for quick mode — use raw query)
+        if depth == "quick":
+            rewriter_output = RewriterOutput(
+                queries=[RewrittenQuery(
+                    query=query,
+                    rationale="quick_mode",
+                    search_depth=SearchDepth.QUICK,
+                )],
+                reasoning="quick mode — no rewrite",
+                status="success",
+            )
+        else:
+            rewriter_output = await rewriter.run(query, trace)
+
         session.rewritten_queries = rewriter_output.queries
 
-        if depth != "balanced":
-            depth_map = {"quick": SearchDepth.QUICK, "deep": SearchDepth.DEEP}
+        if depth not in ("quick", "balanced"):
+            depth_map = {"deep": SearchDepth.DEEP}
             for q in session.rewritten_queries:
                 q.search_depth = depth_map.get(depth, SearchDepth.BALANCED)
 
-        # Search loop
-        while session.iterations < session.max_iterations:
-            session.iterations += 1
-            logger.info("search_iteration_start", iteration=session.iterations)
+        # Search + Extract (single iteration for quick, loop for balanced/deep)
+        if depth == "quick":
+            # Quick path: search → extract → synthesize, no evaluator loop
+            session.iterations = 1
 
             search_results, _ = await searcher.run(rewriter_output, crawl=True, trace=trace)
             session.search_results.extend(search_results)
 
-            if not search_results:
-                logger.warning("search_no_results", iteration=session.iterations)
-                break
+            if search_results:
+                extractor_output = await extractor.run(search_results, trace)
+                session.extracted_facts.merge(extractor_output.facts)
 
-            extractor_output = await extractor.run(search_results, trace)
-            session.extracted_facts.merge(extractor_output.facts)
+            synth_output = await synthesizer.run(
+                session.extracted_facts,
+                [],
+                query,
+                1,
+                trace,
+            )
+        else:
+            # Full path with evaluator loop
+            evaluator = EvaluatorNode(llm)
 
-            eval_output = await evaluator.run(session, trace)
+            while session.iterations < session.max_iterations:
+                session.iterations += 1
+                logger.info("search_iteration_start", iteration=session.iterations)
 
-            if eval_output.sufficient or eval_output.status == "exhausted":
-                break
+                search_results, _ = await searcher.run(rewriter_output, crawl=True, trace=trace)
+                session.search_results.extend(search_results)
 
-            session.gaps = eval_output.gaps
-            logger.info("search_needs_more", gaps=len(eval_output.gaps), confidence=eval_output.confidence)
+                if not search_results:
+                    logger.warning("search_no_results", iteration=session.iterations)
+                    break
 
-            new_queries = []
-            for gap in eval_output.gaps:
-                for sq in gap.suggested_queries[:2]:
-                    new_queries.append(RewrittenQuery(
-                        query=sq,
-                        rationale=f"gap_filling: {gap.description}",
-                        search_depth=SearchDepth.BALANCED,
-                    ))
-            if new_queries:
-                rewriter_output.queries = new_queries
+                extractor_output = await extractor.run(search_results, trace)
+                session.extracted_facts.merge(extractor_output.facts)
 
-        # Synthesize
-        synth_output = await synthesizer.run(
-            session.extracted_facts,
-            session.gaps,
-            query,
-            session.iterations,
-            trace,
-        )
+                eval_output = await evaluator.run(session, trace)
+
+                if eval_output.sufficient or eval_output.status == "exhausted":
+                    break
+
+                session.gaps = eval_output.gaps
+                logger.info("search_needs_more", gaps=len(eval_output.gaps), confidence=eval_output.confidence)
+
+                new_queries = []
+                for gap in eval_output.gaps:
+                    for sq in gap.suggested_queries[:2]:
+                        new_queries.append(RewrittenQuery(
+                            query=sq,
+                            rationale=f"gap_filling: {gap.description}",
+                            search_depth=SearchDepth.BALANCED,
+                        ))
+                if new_queries:
+                    rewriter_output.queries = new_queries
+
+            # Synthesize
+            synth_output = await synthesizer.run(
+                session.extracted_facts,
+                session.gaps,
+                query,
+                session.iterations,
+                trace,
+            )
 
         result = {
             "answer": synth_output.answer,

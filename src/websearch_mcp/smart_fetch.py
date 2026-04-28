@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import re
 from typing import Any, Coroutine
 from urllib.parse import urlparse, urljoin
@@ -132,6 +133,9 @@ def should_follow_url(url: str) -> bool:
     return False
 
 
+MAX_TOTAL_OUTPUT = 50_000  # Hard cap on total output chars
+
+
 async def smart_fetch(
     url: str,
     max_length: int = 5000,
@@ -139,6 +143,7 @@ async def smart_fetch(
     follow_depth: int = 2,
     client: LLMClient | None = None,
     visited: set[str] | None = None,
+    _total_budget: int = MAX_TOTAL_OUTPUT,
 ) -> dict[str, Any]:
     """Fetch URL with intelligent following and extraction.
 
@@ -181,73 +186,71 @@ async def smart_fetch(
     try:
         # Fetch main page
         logger.info("smart_fetch_main", url=url)
-        content, _ = await fetch_url(url, force_raw=False)
+        raw_content, _ = await fetch_url(url, force_raw=False)
+
+        full_length = len(raw_content)
+        truncated = raw_content[start_index:start_index + max_length]
 
         result = {
             "url": url,
-            "content": content,
-            "content_length": len(content),
+            "content": truncated,
+            "content_length": full_length,
             "followed_urls": [],
             "extracted_data": None,
             "github_repos": [],
         }
 
+        # Budget tracking
+        remaining_budget = _total_budget - len(truncated)
+        if full_length > start_index + max_length:
+            result["next_cursor"] = start_index + max_length
+
         # Special handling for GitHub trending
         if 'github.com/trending' in url:
-            repos = extract_github_repos(content)
+            repos = extract_github_repos(raw_content)
             result["github_repos"] = repos
             logger.info("smart_fetch_github_repos", count=len(repos))
 
         # Analyze and extract structured data (skip trivially short pages)
-        if len(content) > 500:
-            extracted = await extract_with_llm(content[:10000], url, client)
+        if len(truncated) > 500:
+            extracted = await extract_with_llm(truncated[:10000], url, client)
             if extracted:
                 result["extracted_data"] = extracted
 
-        # Follow relevant links if depth allows
-        if follow_depth > 0:
-            follow_sem = asyncio.Semaphore(3)
+        # Follow relevant links if depth and budget allow (sequential to enforce budget)
+        if follow_depth > 0 and remaining_budget > 0:
+            if 'github.com/trending' in url and result["github_repos"]:
+                candidates = [
+                    (f"{r['owner']}/{r['repo']}", r["url"])
+                    for r in result["github_repos"][:3]
+                    if r["url"] not in visited
+                ]
+            else:
+                urls = extract_urls(truncated, url)
+                candidates = [
+                    (t, u) for t, u in urls
+                    if should_follow_url(u) and u not in visited
+                ][:5]
 
-            async def _follow_one(title: str, follow_url: str) -> dict[str, Any] | None:
-                if follow_url in visited:
-                    return None
-                async with follow_sem:
+            for title, follow_url in candidates:
+                if remaining_budget <= 0:
+                    break
+                try:
                     sub = await smart_fetch(
                         follow_url,
-                        max_length=max_length,
+                        max_length=min(max_length, remaining_budget),
                         follow_depth=follow_depth - 1,
                         client=client,
                         visited=visited,
+                        _total_budget=remaining_budget,
                     )
-                if sub.get("skipped"):
-                    return None
-                sub["title"] = title
-                return sub
-
-            follow_tasks: list[Coroutine] = []
-
-            if 'github.com/trending' in url and result["github_repos"]:
-                for repo in result["github_repos"][:3]:
-                    repo_url = repo["url"]
-                    if repo_url not in visited:
-                        follow_tasks.append(
-                            _follow_one(f"{repo['owner']}/{repo['repo']}", repo_url)
-                        )
-            else:
-                urls = extract_urls(content, url)
-                to_follow = [(t, u) for t, u in urls if should_follow_url(u)]
-                logger.info("smart_fetch_found_links", count=len(to_follow))
-                for title, follow_url in to_follow[:5]:
-                    if follow_url not in visited:
-                        follow_tasks.append(_follow_one(title, follow_url))
-
-            if follow_tasks:
-                follow_results = await asyncio.gather(*follow_tasks, return_exceptions=True)
-                for r in follow_results:
-                    if isinstance(r, dict):
-                        result["followed_urls"].append(r)
-                    elif isinstance(r, Exception):
-                        logger.warning("smart_fetch_follow_error", error=str(r))
+                    if sub.get("skipped"):
+                        continue
+                    sub["title"] = title
+                    result["followed_urls"].append(sub)
+                    remaining_budget -= len(json.dumps(sub, ensure_ascii=False))
+                except Exception as e:
+                    logger.warning("smart_fetch_follow_error", url=follow_url, error=str(e))
 
         return result
 
@@ -291,7 +294,6 @@ Return JSON with:
             schema=schema,
         )
 
-        import json
         return json.loads(response)
     except Exception as e:
         logger.warning("extract_with_llm_failed", error=str(e))

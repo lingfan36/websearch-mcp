@@ -18,7 +18,7 @@ class Settings(BaseSettings):
 
     # LLM
     ollama_url: str = "http://localhost:11434/v1/chat/completions"
-    ollama_model: str = "qwen2.5"
+    ollama_model: str = "qwen2.5:1.5b"
     llm_timeout: float = 30.0
 
     # Typesense
@@ -39,11 +39,24 @@ class Settings(BaseSettings):
     max_iterations: int = 3
     confidence_threshold: float = 0.7
 
+    # Fetch strategy
+    use_jina_reader: bool = True
+    jina_reader_url: str = "https://r.jina.ai/"
+    jina_search_url: str = "https://s.jina.ai/"
+    jina_api_key: str = ""
+    use_browser_fallback: bool = False
+
     @property
     def typesense_url(self) -> str:
         return f"http://{self.typesense_host}:{self.typesense_port}"
 
 
+_settings: Settings | None = None
+
+
 def get_settings() -> Settings:
     """Get settings singleton."""
-    return Settings()
+    global _settings
+    if _settings is None:
+        _settings = Settings()
+    return _settings
