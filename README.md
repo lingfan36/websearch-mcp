@@ -81,12 +81,18 @@ Fetch up to 10 URLs concurrently. Same three-layer fallback per URL.
 
 ### `web_search`
 
-Deep research pipeline powered by local LLM:
+Deep research pipeline powered by local LLM. Searches local index first, falls back to live web, and auto-indexes new content:
 
 ```
 "What are the latest breakthroughs in quantum computing?"
+
+1. Search local Typesense index → found? → use cached results
+2. No results? → search live web → fetch pages → extract facts
+3. Auto-index fetched pages → next search hits local index
 → Structured answer with citations, confidence score, key findings
 ```
+
+The index grows automatically — the more you search, the faster future searches become.
 
 ### `fetch_with_insights`
 
@@ -154,6 +160,26 @@ The core innovation. Every URL fetch goes through three layers, automatically fa
                                        ▼
                               Answer + Citations
 ```
+
+### Smart Index Growth
+
+`web_search` automatically builds your local knowledge base over time:
+
+```
+ User searches "quantum computing"
+          │
+          ▼
+   Typesense index ──→ Hit? ──→ Use cached results (fast)
+          │
+          │ Miss
+          ▼
+   Live web search ──→ Fetch pages ──→ Extract content
+          │
+          ▼
+   Write to Typesense index ──→ Next search hits local (faster)
+```
+
+Every search that falls back to the web enriches your local index. The more you use it, the faster and richer it gets.
 
 ---
 
