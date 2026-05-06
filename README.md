@@ -213,13 +213,15 @@ Add to your Claude Code, Cursor, or other MCP client config:
 
 That's it. The `fetch`, `fetch_batch`, and `web_search_quick` tools work immediately.
 
-### 3. Optional: Deep research with local LLM
+### 3. Optional: Deep research with cloud LLM
 
-For the `web_search` deep research pipeline, install Ollama:
+For the `web_search` deep research pipeline, configure MiniMax API (or any OpenAI-compatible API):
 
-```bash
-# Install Ollama: https://ollama.com/download
-ollama pull qwen2.5:1.5b
+```env
+# .env
+OPENAI_API_KEY=your_minimax_api_key
+OPENAI_BASE_URL=https://api.minimaxi.com/v1/chat/completions
+OPENAI_MODEL=MiniMax-M2.7
 ```
 
 ### 4. Optional: Browser fallback
@@ -246,9 +248,10 @@ USE_JINA_READER=true             # Jina Reader as first fetch layer
 USE_BROWSER_FALLBACK=false       # Playwright for protected sites
 
 # ── Deep Research (web_search tool) ───────────────
-OLLAMA_URL=http://localhost:11434/v1/chat/completions
-OLLAMA_MODEL=qwen2.5:1.5b
-LLM_TIMEOUT=30
+OPENAI_API_KEY=your_api_key
+OPENAI_BASE_URL=https://api.minimaxi.com/v1/chat/completions
+OPENAI_MODEL=MiniMax-M2.7
+LLM_TIMEOUT=120
 
 # ── Search Index ──────────────────────────────────
 TYPESENSE_HOST=localhost
