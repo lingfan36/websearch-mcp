@@ -1,162 +1,189 @@
-<div align="center">
-
-<img src="https://img.icons8.com/3d-fluency/94/search.png" width="80" />
-
 # WebSearch MCP
 
-**Production-grade web search and research tools for AI agents.**
+**让 AI Agent 实时接入互联网。**
 
-Open the web for your AI — search, read, extract, and synthesize information at scale.
+一个生产级的 MCP 服务器，为 AI 编码助手和研究工具提供实时 web 搜索、内容抓取和深度研究能力。
 
 [![PyPI](https://img.shields.io/badge/Python-3.10%2B-3776AB?style=flat-square&logo=python&logoColor=white)](https://python.org)
 [![MCP](https://img.shields.io/badge/MCP-Compatible-0EA5E9?style=flat-square)](https://modelcontextprotocol.io/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-9333EA?style=flat-square)](LICENSE)
 [![GitHub stars](https://img.shields.io/github/stars/lingfan36/websearch-mcp?style=flat-square)](https://github.com/lingfan36/websearch-mcp/stargazers)
 
-[Features](#features) · [Tools](#tools) · [Architecture](#architecture) · [Quick Start](#quick-start) · [Configuration](#configuration)
+---
 
-</div>
+## 核心价值
+
+大多数 AI 编码助手是"瞎子"——它们无法搜索互联网、无法读取网页、无法跨页面比较信息。
+
+WebSearch MCP 用一个自托管服务解决这些问题：
+
+| 能力 | 说明 |
+|:-----|:-----|
+| **5 个 MCP 工具** | 覆盖快速搜索、深度研究、URL 抓取、批量处理、智能爬取 |
+| **并行搜索** | 多查询并发，延迟从 69s 降至 ~25s |
+| **3 层抓取引擎** | Jina Reader → 本地解析 → Playwright 浏览器 |
+| **自动索引** | 搜索结果自动写入 Typesense，本地缓存越来越快 |
+| **深度研究管道** | Query → Rewrite → Search → Extract → Evaluate → Synthesize |
+| **Hook 系统** | Pre/post 事件钩子，支持日志、成本跟踪、缓存 |
+| **Skill 配置** | YAML 定义的节点行为配置 |
 
 ---
 
-## What is WebSearch MCP?
+## 工具
 
-A Model Context Protocol server that gives AI agents real-time access to the web. Not just simple search — a complete research pipeline that:
+### `web_search` — 深度研究
 
-- **Searches** the live web and local indexes
-- **Reads** any URL and extracts clean markdown
-- **Understands** content through LLM-powered fact extraction
-- **Synthesizes** findings into structured answers with citations
-- **Grows** smarter over time by auto-indexing visited pages
+复杂查询的深度研究管道。返回带引用和置信度评分的结构化答案。
 
-Built for AI coding assistants, agents, and research tools that need current, accurate information from the web.
+```python
+result = await web_search(
+    query="今天 GitHub 热门 AI 项目有哪些？",
+    depth="balanced"  # quick / balanced / deep
+)
+# 返回: {answer, citations, confidence, key_findings}
+```
+
+**执行流程：**
+```
+Query → Rewrite (生成 3-5 个子查询)
+      → Search (并行搜索 Typesense + 实时 web)
+      → Extract (LLM 从页面提取事实)
+      → Evaluate (评估是否充分)
+      → Synthesize (生成带引用的结构化答案)
+```
+
+### `web_search_quick` — 快速搜索
+
+无需 LLM 开销的快速 web 搜索，~3 秒返回结果。
+
+```python
+results = await web_search_quick(
+    query="2026 年最火的编程语言",
+    fetch_content=True  # 可选：同时抓取前 3 个结果的内容
+)
+```
+
+### `fetch` — URL 抓取
+
+抓取任意 URL 并返回干净 markdown。三层自动降级：
+
+1. **Jina Reader API** — 快速、高质量
+2. **本地解析器** — readabilipy + markdownify，无外部依赖
+3. **Playwright 浏览器** — 处理 Cloudflare/JS 加密站点
+
+```python
+content = await fetch(
+    url="https://github.com/trending",
+    max_length=5000
+)
+```
+
+### `fetch_batch` — 批量抓取
+
+并发抓取多达 10 个 URL，每个 URL 独立走 3 层降级。
+
+### `fetch_with_insights` — 智能爬取
+
+AI 驱动的链接follow，自动提取结构化数据。适合跨多页面研究主题。
 
 ---
 
-## Features
+## 架构
 
-| Capability | Description |
-|:-----------|:------------|
-| **5 MCP Tools** | `web_search`, `web_search_quick`, `fetch`, `fetch_batch`, `fetch_with_insights` |
-| **Parallel Search** | Concurrent queries reduce latency from 69s to ~25s |
-| **3-Layer Fetch** | Jina Reader → local parser → Playwright browser |
-| **Auto-Indexing** | Web search results automatically indexed to Typesense |
-| **Deep Research** | Multi-stage pipeline: rewrite → search → extract → evaluate → synthesize |
-| **Hook System** | Pre/post event handlers for logging, caching, cost tracking |
-| **Skill Config** | YAML-based configuration for node behavior |
-| **Cloud LLM Ready** | OpenAI-compatible API (MiniMax, OpenAI, etc.) |
+### 3 层抓取引擎
+
+```
+URL
+ │
+ ▼
+┌──────────────────────────────────────────────────┐
+│  Layer 1: Jina Reader API                        │
+│  ─────────────────────                           │
+│  ✅ 成功 → 返回 markdown                          │
+│  ❌ 失败 → 降级到 Layer 2                         │
+└────────────────────┬─────────────────────────────┘
+                     │
+                     ▼
+┌──────────────────────────────────────────────────┐
+│  Layer 2: Local HTTP + readabilipy               │
+│  ─────────────────────                           │
+│  ✅ 成功 → 返回 markdown                          │
+│  ⚠️  403/Cloudflare → Layer 3                   │
+│  ❌ 其他错误 → 抛出异常                           │
+└────────────────────┬─────────────────────────────┘
+                     │
+                     ▼
+┌──────────────────────────────────────────────────┐
+│  Layer 3: Playwright Headless Browser            │
+│  ─────────────────────                           │
+│  ✅ 成功 → 返回 markdown                          │
+│  ❌ 失败 → 抛出原始异常                           │
+└──────────────────────────────────────────────────┘
+```
+
+### 深度研究管道
+
+```
+        ┌─────────┐
+        │ Rewrite │
+        └────┬────┘
+             │  生成子查询
+             ▼
+        ┌─────────┐
+        │ Search  │ ← 并发执行
+        └────┬────┘
+             │  搜索结果
+             ▼
+        ┌─────────┐
+        │ Extract │ ← LLM 提取事实
+        └────┬────┘
+             │  事实
+             ▼
+        ┌─────────┐
+        │Evaluate │ ← 足够？
+        └────┬────┘
+             │  不足 → 循环
+             ▼
+        ┌──────────┐
+        │Synthesize│ ← 生成答案
+        └────┬─────┘
+             │
+             ▼
+         Answer
+```
+
+### 智能索引增长
+
+```
+用户搜索 "量子计算"
+        │
+        ▼
+  Typesense 命中？ ── 是 ──→ 返回缓存结果
+        │
+       否
+        │
+        ▼
+  实时 web 搜索 → 抓取页面 → 提取内容
+        │
+        ▼
+  写入 Typesense ← 下次搜索命中本地索引
+```
+
+每次回退到 web 搜索都会丰富本地索引。使用越久，搜索越快。
 
 ---
 
-## Tools
+## 快速开始
 
-### `web_search`
-
-Deep research pipeline for complex queries. Returns structured answers with citations and confidence scores.
-
-```
-Input:  "What are today's GitHub trending AI projects?"
-Output: {
-  answer: "Based on today's data...",
-  citations: [{text, url, title}],
-  confidence: 0.85,
-  key_findings: [...]
-}
-```
-
-**Pipeline stages:**
-1. **Rewrite** — Expand query into 3-5 sub-queries
-2. **Search** — Query Typesense first, fallback to live web (parallel)
-3. **Extract** — LLM extracts facts, entities, statistics from pages
-4. **Evaluate** — Check if findings are sufficient
-5. **Synthesize** — Generate structured answer with citations
-
-### `web_search_quick`
-
-Fast web search without LLM overhead. Returns results in ~3 seconds.
-
-```
-Input:  {query: "best Rust web frameworks 2026", fetch_content: true}
-Output: [{title, url, snippet, content}]
-```
-
-### `fetch`
-
-Fetch any URL and get clean markdown. Three-layer fallback handles failures automatically:
-
-1. **Jina Reader** — Fast, high-quality extraction
-2. **Local parser** — readabilipy + markdownify, no external dependency
-3. **Playwright** — Headless Chromium for Cloudflare/JS-protected sites
-
-### `fetch_batch`
-
-Fetch up to 10 URLs concurrently with the same 3-layer fallback per URL.
-
-### `fetch_with_insights`
-
-Smart crawler that follows relevant links and extracts structured data. Good for researching topics across multiple pages.
-
----
-
-## Architecture
-
-### Fetch Engine
-
-```
-URL → Jina Reader API → Success? → Markdown
-              ↓ Fail
-     Local HTTP + readabilipy → Success? → Markdown
-                    ↓ Fail (403/Cloudflare)
-           Playwright Chromium → Markdown
-```
-
-### Deep Research Pipeline
-
-```
-Query
-  │
-  ▼
-┌─────────┐    ┌─────────┐    ┌─────────┐    ┌─────────┐    ┌───────────┐
-│ Rewrite │───▶│  Search │───▶│ Extract │───▶│ Evaluate│───▶│ Synthesize│
-└─────────┘    └─────────┘    └─────────┘    └─────────┘    └───────────┘
-     │              │              │              │              │
-     ▼              ▼              ▼              ▼              ▼
- Sub-queries   Parallel web    Facts +       Sufficient?    Answer +
-                search         entities      No → loop      citations
-```
-
-### Smart Index Growth
-
-The local Typesense index grows automatically:
-
-```
-Search "AI agents"
-      │
-      ▼
-Typesense hit? ──Yes──→ Return cached
-      │
-     No
-      │
-      ▼
-Live web search → Fetch pages → Extract content
-      │
-      ▼
-Index to Typesense ← Next search hits local
-```
-
----
-
-## Quick Start
-
-### 1. Install
+### 1. 安装
 
 ```bash
 pip install -e .
-# or zero-install
+# 或零安装
 uvx websearch-mcp
 ```
 
-### 2. Configure MCP Client
+### 2. 配置 MCP 客户端
 
 ```json
 {
@@ -172,51 +199,51 @@ uvx websearch-mcp
 }
 ```
 
-### 3. Start Using
+### 3. 使用
 
 ```python
-# Quick search
-results = await web_search_quick("GitHub trending today")
+# 快速搜索（~3秒）
+results = await web_search_quick("GitHub trending AI")
 
-# Deep research
+# 深度研究（~2分钟）
 result = await web_search(
-    query="What are the latest developments in AI agents?",
-    depth="balanced"  # quick / balanced / deep
+    query="今天最火的 AI 开源项目有哪些？",
+    depth="balanced"
 )
 ```
 
 ---
 
-## Configuration
+## 配置
 
-| Variable | Default | Description |
-|:---------|:--------|:------------|
-| `JINA_API_KEY` | - | Jina Search/Reader API key |
-| `OPENAI_API_KEY` | - | LLM API key (MiniMax, OpenAI, etc.) |
-| `OPENAI_BASE_URL` | `https://api.minimaxi.com/v1/chat/completions` | LLM endpoint |
-| `OPENAI_MODEL` | `MiniMax-M2.7` | LLM model |
-| `LLM_TIMEOUT` | `120` | LLM request timeout (seconds) |
-| `TYPESENSE_HOST` | `localhost` | Typesense server host |
-| `TYPESENSE_PORT` | `8108` | Typesense server port |
-| `USE_BROWSER_FALLBACK` | `false` | Enable Playwright for protected sites |
-
----
-
-## Tech Stack
-
-| Layer | Technology |
-|:------|:-----------|
-| Protocol | [MCP](https://modelcontextprotocol.io/) |
-| Search | [Jina Search API](https://jina.ai/search/) |
-| URL Reading | [Jina Reader](https://jina.ai/reader/) + [readabilipy](https://github.com/alanmcruickshank/readabilipy) |
-| LLM | OpenAI-compatible (MiniMax, OpenAI, Ollama, etc.) |
-| Search Index | [Typesense](https://typesense.org/) |
-| HTML → Markdown | [markdownify](https://github.com/matthewwithanm/python-markdownify) |
-| Validation | [Pydantic v2](https://docs.pydantic.dev/) |
+| 环境变量 | 默认值 | 说明 |
+|:---------|:------|:-----|
+| `JINA_API_KEY` | - | Jina Search/Reader API Key |
+| `OPENAI_API_KEY` | - | LLM API Key |
+| `OPENAI_BASE_URL` | `https://api.minimaxi.com/v1/chat/completions` | LLM 端点 |
+| `OPENAI_MODEL` | `MiniMax-M2.7` | LLM 模型 |
+| `LLM_TIMEOUT` | `120` | LLM 请求超时（秒） |
+| `TYPESENSE_HOST` | `localhost` | Typesense 服务器地址 |
+| `TYPESENSE_PORT` | `8108` | Typesense 服务器端口 |
+| `USE_BROWSER_FALLBACK` | `false` | 启用 Playwright 处理受保护站点 |
 
 ---
 
-## Contributing
+## 技术栈
+
+| 层级 | 技术 |
+|:-----|:-----|
+| 协议 | [MCP](https://modelcontextprotocol.io/) |
+| 搜索 | [Jina Search API](https://jina.ai/search/) |
+| URL 读取 | [Jina Reader](https://jina.ai/reader/) + [readabilipy](https://github.com/alanmcruickshank/readabilipy) |
+| LLM | OpenAI 兼容接口（MiniMax、OpenAI、Ollama 等） |
+| 搜索索引 | [Typesense](https://typesense.org/) |
+| HTML 转换 | [markdownify](https://github.com/matthewwithanm/python-markdownify) |
+| 数据验证 | [Pydantic v2](https://docs.pydantic.dev/) |
+
+---
+
+## 贡献
 
 ```bash
 git clone https://github.com/lingfan36/websearch-mcp.git
@@ -225,16 +252,14 @@ pip install -e ".[dev]"
 pytest
 ```
 
-PRs welcome.
+欢迎提交 PR。
 
 ---
 
-<div align="center">
+## 许可证
 
-**MIT License** · [Ling Fan](https://github.com/lingfan36)
+MIT License · [Ling Fan](https://github.com/lingfan36)
 
-Star this repo if you find it useful.
+如果对你有用，请给个 Star。
 
 [![GitHub stars](https://img.shields.io/github/stars/lingfan36/websearch-mcp?style=social)](https://github.com/lingfan36/websearch-mcp/stargazers)
-
-</div>
