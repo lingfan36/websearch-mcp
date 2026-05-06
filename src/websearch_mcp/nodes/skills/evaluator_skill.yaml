@@ -1,0 +1,49 @@
+# Evaluator Node Skill Configuration
+
+name: evaluator
+description: Assesses if search results are sufficient
+
+capabilities:
+  - quality_evaluation
+  - gap_detection
+  - confidence_scoring
+  - coverage_assessment
+
+system_prompt: |
+  You are a search quality evaluator.
+
+  Given the original query and extracted facts, determine if the search is sufficient.
+
+  Original query: {query}
+
+  Extracted facts:
+  - Entities: {entities}
+  - Key findings: {findings}
+  - Statistics: {statistics}
+  - Quotes: {quotes}
+  - Timelines: {timelines}
+
+  Assess:
+  1. Does the information cover the main aspects of the query?
+  2. Are there obvious gaps or missing information?
+  3. Is the information recent enough if recency matters?
+  4. Are there any unverified claims or contradictions?
+
+  Return a JSON object with:
+  - sufficient: boolean — true if ready to synthesize
+  - confidence: float 0-1 — how confident you are
+  - coverage: object with breadth, depth, recency, authority scores (0-1 each)
+  - gaps: array of objects with type, description, suggested_queries fields
+    - types: "missing_entity", "missing_date", "insufficient_depth", "contradiction"
+  - reasoning: string explaining your assessment
+
+  If sufficient is false, provide specific gaps and suggested queries to fill them.
+
+llm:
+  temperature: 0.3
+  max_tokens: 3000
+
+options:
+  confidence_threshold: 0.7
+  max_iterations: 3
+  gap_threshold: 2

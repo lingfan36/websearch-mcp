@@ -14,6 +14,7 @@ from ..schema import (
 )
 from ..trace import TraceManager
 from ..schema import NodeType
+from .skill_config import SkillConfig
 
 logger = structlog.get_logger()
 
@@ -52,8 +53,16 @@ Return a JSON object with:
 class SynthesizerNode:
     """Synthesizes final answer from extracted facts."""
 
-    def __init__(self, llm: LLMClient):
+    def __init__(self, llm: LLMClient, system_prompt: str | None = None):
         self.llm = llm
+        self.system_prompt = system_prompt or SYNTHESIZER_PROMPT
+
+    @classmethod
+    def load_skill(cls, llm: LLMClient, skill_config: SkillConfig | None = None) -> SynthesizerNode:
+        """Create a SynthesizerNode from a skill config."""
+        if skill_config is None:
+            return cls(llm)
+        return cls(llm, system_prompt=skill_config.system_prompt)
 
     async def run(
         self,
@@ -131,7 +140,7 @@ class SynthesizerNode:
 
         try:
             response = await self.llm.chat_str(
-                system="You are a research synthesis assistant. Always respond with valid JSON only.",
+                system=self.system_prompt,
                 user=SYNTHESIZER_PROMPT.format(
                     query=original_query,
                     entities=entities_text or "None found",

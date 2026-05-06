@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
+
+import structlog
 
 from ..llm import LLMClient
 from ..schema import (
@@ -12,7 +15,7 @@ from ..schema import (
 )
 from ..trace import TraceManager
 from ..schema import NodeType
-import structlog
+from .skill_config import SkillConfig
 
 logger = structlog.get_logger()
 
@@ -40,8 +43,16 @@ Original query: {query}
 class RewriterNode:
     """Rewrites user queries into search-friendly sub-queries."""
 
-    def __init__(self, llm: LLMClient):
+    def __init__(self, llm: LLMClient, system_prompt: str | None = None):
         self.llm = llm
+        self.system_prompt = system_prompt or REWRITER_PROMPT
+
+    @classmethod
+    def load_skill(cls, llm: LLMClient, skill_config: SkillConfig | None = None) -> RewriterNode:
+        """Create a RewriterNode from a skill config."""
+        if skill_config is None:
+            return cls(llm)
+        return cls(llm, system_prompt=skill_config.system_prompt)
 
     async def run(
         self,
@@ -81,7 +92,7 @@ class RewriterNode:
 
         try:
             response = await self.llm.chat_str(
-                system="You are a helpful query rewriting assistant. Always respond with valid JSON only.",
+                system=self.system_prompt,
                 user=REWRITER_PROMPT.format(query=query),
                 schema=schema,
             )

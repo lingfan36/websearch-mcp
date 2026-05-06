@@ -17,9 +17,9 @@ class Settings(BaseSettings):
     )
 
     # LLM
-    ollama_url: str = "http://localhost:11434/v1/chat/completions"
-    ollama_model: str = "qwen2.5:1.5b"
-    llm_timeout: float = 30.0
+    openai_base_url: str = "https://api.minimaxi.com/v1/chat/completions"
+    openai_model: str = "MiniMax-M2.7"
+    llm_timeout: float = 120.0
 
     # Typesense
     typesense_host: str = "localhost"

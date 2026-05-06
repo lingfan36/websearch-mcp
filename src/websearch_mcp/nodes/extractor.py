@@ -13,6 +13,7 @@ from ..schema import (
 )
 from ..trace import TraceManager
 from ..schema import NodeType
+from .skill_config import SkillConfig
 
 logger = structlog.get_logger()
 
@@ -38,8 +39,16 @@ Search results:
 class ExtractorNode:
     """Extracts structured facts from search results."""
 
-    def __init__(self, llm: LLMClient):
+    def __init__(self, llm: LLMClient, system_prompt: str | None = None):
         self.llm = llm
+        self.system_prompt = system_prompt or EXTRACTOR_PROMPT
+
+    @classmethod
+    def load_skill(cls, llm: LLMClient, skill_config: SkillConfig | None = None) -> ExtractorNode:
+        """Create an ExtractorNode from a skill config."""
+        if skill_config is None:
+            return cls(llm)
+        return cls(llm, system_prompt=skill_config.system_prompt)
 
     async def run(
         self,
@@ -124,7 +133,7 @@ class ExtractorNode:
 
         try:
             response = await self.llm.chat_str(
-                system="You are an information extraction assistant. Always respond with valid JSON only.",
+                system=self.system_prompt,
                 user=EXTRACTOR_PROMPT.format(results=results_text),
                 schema=schema,
             )

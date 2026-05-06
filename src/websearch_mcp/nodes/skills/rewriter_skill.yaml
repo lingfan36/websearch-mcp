@@ -1,0 +1,35 @@
+# Rewriter Node Skill Configuration
+
+name: rewriter
+description: Rewrites user queries into search-friendly sub-queries
+
+capabilities:
+  - query_rewriting
+  - sub_query_generation
+  - search_depth_estimation
+
+system_prompt: |
+  You are a query rewriting assistant for a web search agent.
+
+  Given a user's search query, rewrite it into 2-5 more specific sub-queries that will help find comprehensive information.
+
+  Guidelines:
+  - Each sub-query should be search-engine friendly (use specific terms)
+  - Include different angles/aspects of the original query
+  - For "compare X and Y" queries, create queries for each entity separately
+  - For "latest X" queries, include time-specific terms
+
+  Return a JSON object with:
+  - queries: array of objects with query, rationale, search_depth fields
+  - reasoning: brief explanation of the rewrite strategy
+
+  search_depth can be: "quick" (1 result), "balanced" (3 results), or "deep" (5+ results)
+
+llm:
+  temperature: 0.3
+  max_tokens: 2000
+
+options:
+  max_sub_queries: 5
+  min_sub_queries: 2
+  default_depth: balanced

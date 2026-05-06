@@ -2,226 +2,66 @@
 
 from __future__ import annotations
 
-import asyncio
-import json
 import sys
 from typing import Any
 
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
-from mcp.types import Tool, TextContent
+from mcp.types import Tool, TextContent, Resource, Prompt
+
+# Import registries from registries/ subpackage
+from .registries.tool_registry import create_default_registry as create_tool_registry_full
+from .registries.resource_registry import create_default_registry as create_resource_registry_full
+from .registries.prompt_registry import create_default_registry as create_prompt_registry_full
 
 # Lightweight — only import MCP SDK at startup
 # Heavy modules (ollama, trafilatura, typesense, etc.) load on first tool call
 
 server = Server("websearch-mcp")
 
+# Create registries
+_tool_registry = create_tool_registry_full()
+_resource_registry = create_resource_registry_full()
+_prompt_registry = create_prompt_registry_full()
+
 
 @server.list_tools()
 async def list_tools() -> list[Tool]:
     """List available tools."""
-    return [
-        Tool(
-            name="web_search_quick",
-            description="""Fast web search using Jina Search API. No local LLM needed.
-
-Returns search results with titles, URLs, and snippets instantly.
-Optionally fetches top results' full content.
-
-**Best for:** Quick lookups, finding specific information, comparing sources.
-**For deep research:** Use `web_search` instead.""",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "query": {
-                        "type": "string",
-                        "description": "Search query",
-                    },
-                    "max_results": {
-                        "type": "integer",
-                        "default": 10,
-                        "description": "Max search results (1-10)",
-                    },
-                    "fetch_content": {
-                        "type": "boolean",
-                        "default": False,
-                        "description": "Fetch full content of top 3 results",
-                    },
-                },
-                "required": ["query"],
-            },
-        ),
-        Tool(
-            name="web_search",
-            description="""Deep research pipeline using indexed knowledge base.
-
-Searches a pre-built index, uses query rewriting, fact extraction, quality
-evaluation, and multi-source synthesis.
-
-**Best for:** Complex research, multi-topic synthesis.
-**For fast searches:** Use `web_search_quick` instead.
-
-Returns: answer, citations, confidence (0-1), key_findings.""",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "query": {
-                        "type": "string",
-                        "description": "Search query",
-                    },
-                    "depth": {
-                        "type": "string",
-                        "enum": ["quick", "balanced", "deep"],
-                        "default": "balanced",
-                    },
-                },
-                "required": ["query"],
-            },
-        ),
-        Tool(
-            name="fetch",
-            description="""Fetch a URL and return content as markdown.
-
-Uses three-layer fallback: Jina Reader → local parser → Playwright browser.
-
-**Best for:** Real-time data, specific URLs, trending topics.
-Supports max_length, start_index (pagination), raw mode.""",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "url": {"type": "string", "description": "URL to fetch"},
-                    "max_length": {"type": "integer", "default": 5000},
-                    "start_index": {"type": "integer", "default": 0},
-                    "raw": {"type": "boolean", "default": False},
-                },
-                "required": ["url"],
-            },
-        ),
-        Tool(
-            name="fetch_with_insights",
-            description="""Smart fetcher with AI-powered link following.
-
-Automatically follows relevant links, extracts structured data.
-E.g. GitHub trending → auto-parse repos, stars, descriptions.
-
-**Best for:** Research, comparisons, extracting multiple data points.""",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "url": {"type": "string", "description": "URL to analyze"},
-                    "follow_depth": {"type": "integer", "default": 2},
-                    "max_length": {"type": "integer", "default": 8000},
-                },
-                "required": ["url"],
-            },
-        ),
-        Tool(
-            name="fetch_batch",
-            description="""Batch fetch multiple URLs concurrently.
-
-Fetches up to 10 URLs in parallel and returns all results.
-Each URL uses the same three-layer fallback as `fetch`.
-
-**Best for:** Comparing multiple pages, gathering data from several sources.""",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "urls": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                        "description": "URLs to fetch (max 10)",
-                    },
-                    "max_length": {
-                        "type": "integer",
-                        "default": 3000,
-                        "description": "Max chars per URL",
-                    },
-                },
-                "required": ["urls"],
-            },
-        ),
-    ]
+    return _tool_registry.list_tools()
 
 
 @server.call_tool()
 async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
-    """Handle tool calls — heavy imports happen here, not at startup."""
-    if name == "web_search_quick":
-        from .fetch import search_web, fetch_and_extract
-        query = arguments.get("query", "")
-        max_results = min(arguments.get("max_results", 10), 10)
-        fetch_content = arguments.get("fetch_content", False)
+    """Handle tool calls — delegate to tool registry."""
+    return await _tool_registry.call(name, arguments)
 
-        results = await search_web(query, max_results=max_results)
 
-        if fetch_content and results:
-            async def _fetch_one(r: dict[str, Any]) -> None:
-                try:
-                    content, _ = await fetch_and_extract(r["url"], max_length=3000, check_robots=False)
-                    r["content"] = content[:3000]
-                except Exception as e:
-                    r["content"] = f"<error>{e}</error>"
+# === Optional: resources and prompts ===
+# Uncomment if MCP server supports list_resources / list_prompts
 
-            await asyncio.gather(*[_fetch_one(r) for r in results[:3]])
+# @server.list_resources()
+# async def list_resources() -> list[Resource]:
+#     """List available resources."""
+#     return _resource_registry.list_resources()
 
-        return [TextContent(
-            type="text",
-            text=json.dumps(results, ensure_ascii=False, indent=2),
-        )]
+# @server.read_resource()
+# async def read_resource(uri: str) -> str:
+#     """Read a resource by URI."""
+#     content = await _resource_registry.read(uri)
+#     if content is None:
+#         raise ValueError(f"Unknown resource: {uri}")
+#     return content
 
-    elif name == "web_search":
-        from .search_handler import handle_web_search
-        result = await handle_web_search(
-            query=arguments.get("query", ""),
-            depth=arguments.get("depth", "balanced"),
-        )
-        return [TextContent(
-            type="text",
-            text=json.dumps(result, ensure_ascii=False, indent=2),
-        )]
+# @server.list_prompts()
+# async def list_prompts() -> list[Prompt]:
+#     """List available prompts."""
+#     return _prompt_registry.list_prompts()
 
-    elif name == "fetch":
-        from .fetch import fetch_and_extract
-        content = await fetch_and_extract(
-            url=arguments.get("url", ""),
-            max_length=arguments.get("max_length", 5000),
-            start_index=arguments.get("start_index", 0),
-            raw=arguments.get("raw", False),
-        )
-        return [TextContent(type="text", text=content)]
-
-    elif name == "fetch_with_insights":
-        from .smart_fetch import smart_fetch
-        result = await smart_fetch(
-            url=arguments.get("url", ""),
-            follow_depth=arguments.get("follow_depth", 2),
-            max_length=arguments.get("max_length", 8000),
-        )
-        return [TextContent(
-            type="text",
-            text=json.dumps(result, ensure_ascii=False, indent=2),
-        )]
-
-    elif name == "fetch_batch":
-        from .fetch import fetch_and_extract
-        urls = arguments.get("urls", [])[:10]
-        max_length = arguments.get("max_length", 3000)
-
-        async def _fetch_one(u: str) -> dict[str, Any]:
-            try:
-                content = await fetch_and_extract(u, max_length=max_length, check_robots=True)
-                return {"url": u, "success": True, "content": content}
-            except Exception as e:
-                return {"url": u, "success": False, "error": str(e)}
-
-        results = await asyncio.gather(*[_fetch_one(u) for u in urls])
-        return [TextContent(
-            type="text",
-            text=json.dumps(list(results), ensure_ascii=False, indent=2),
-        )]
-
-    else:
-        raise ValueError(f"Unknown tool: {name}")
+# @server.get_prompt()
+# async def get_prompt(name: str, arguments: dict[str, Any] | None = None) -> str:
+#     """Get prompt content."""
+#     return await _prompt_registry.get_prompt(name, arguments)
 
 
 def main():

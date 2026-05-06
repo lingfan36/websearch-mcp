@@ -15,6 +15,7 @@ from ..schema import (
 )
 from ..trace import TraceManager
 from ..schema import NodeType
+from .skill_config import SkillConfig
 
 logger = structlog.get_logger()
 
@@ -79,14 +80,30 @@ class EvaluatorNode:
     def __init__(
         self,
         llm: LLMClient,
+        system_prompt: str | None = None,
         confidence_threshold: float = 0.7,
         max_iterations: int = 3,
         gap_threshold: int = 2,
     ):
         self.llm = llm
+        self.system_prompt = system_prompt or EVALUATOR_PROMPT
         self.confidence_threshold = confidence_threshold
         self.max_iterations = max_iterations
         self.gap_history = GapHistory(threshold=gap_threshold)
+
+    @classmethod
+    def load_skill(cls, llm: LLMClient, skill_config: SkillConfig | None = None) -> EvaluatorNode:
+        """Create an EvaluatorNode from a skill config."""
+        if skill_config is None:
+            return cls(llm)
+        options = skill_config.options
+        return cls(
+            llm,
+            system_prompt=skill_config.system_prompt,
+            confidence_threshold=options.get("confidence_threshold", 0.7),
+            max_iterations=options.get("max_iterations", 3),
+            gap_threshold=options.get("gap_threshold", 2),
+        )
 
     async def run(
         self,
@@ -166,7 +183,7 @@ class EvaluatorNode:
 
         try:
             response = await self.llm.chat_str(
-                system="You are a search quality evaluator. Always respond with valid JSON only.",
+                system=self.system_prompt,
                 user=EVALUATOR_PROMPT.format(
                     query=session.original_query,
                     entities=entities_text or "None",

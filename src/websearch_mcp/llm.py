@@ -1,8 +1,9 @@
-"""LLM client for Ollama."""
+"""LLM client for OpenAI-compatible APIs."""
 
 from __future__ import annotations
 
 import json
+import os
 import re
 from typing import Any
 
@@ -13,8 +14,8 @@ from .exceptions import LLMRateLimitError, RewriterError
 
 logger = structlog.get_logger()
 
-DEFAULT_OLLAMA_URL = "http://localhost:11434/v1/chat/completions"
-DEFAULT_MODEL = "qwen2.5:1.5b"
+DEFAULT_OPENAI_BASE_URL = "https://api.minimaxi.com/v1"
+DEFAULT_OPENAI_MODEL = "MiniMax-M2.7"
 
 
 def _extract_json_with_balanced_braces(content: str) -> str | None:
@@ -63,23 +64,29 @@ def _extract_json_with_balanced_braces(content: str) -> str | None:
 
 
 class LLMClient:
-    """Ollama LLM client (OpenAI compatible)."""
+    """OpenAI-compatible LLM client (supports MiniMax, Ollama, etc)."""
 
     def __init__(
         self,
         api_url: str | None = None,
         model: str | None = None,
         timeout: float | None = None,
+        api_key: str | None = None,
     ):
-        self.api_url = api_url or DEFAULT_OLLAMA_URL
-        self.model = model or DEFAULT_MODEL
-        self.timeout = timeout if timeout is not None else 30.0
+        self.api_url = api_url or DEFAULT_OPENAI_BASE_URL
+        self.model = model or DEFAULT_OPENAI_MODEL
+        self.api_key = api_key or os.environ.get("OPENAI_API_KEY", "")
+        self.timeout = timeout if timeout is not None else 120.0
         self._client: httpx.AsyncClient | None = None
 
     @property
     def client(self) -> httpx.AsyncClient:
         if self._client is None:
-            self._client = httpx.AsyncClient(timeout=self.timeout)
+            self._client = httpx.AsyncClient(
+                timeout=self.timeout,
+                follow_redirects=True,
+                trust_env=False,
+            )
         return self._client
 
     async def close(self) -> None:
@@ -113,15 +120,18 @@ class LLMClient:
         }
 
         if schema:
-            # Ollama doesn't support response_format - add schema to system prompt instead
             schema_hint = f"\n\nRespond ONLY with valid JSON matching this schema:\n{json.dumps(schema, indent=2)}"
             if messages[0]["role"] == "system":
                 messages[0]["content"] += schema_hint
             else:
                 messages.insert(0, {"role": "system", "content": schema_hint})
 
+        headers = {}
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
+
         try:
-            response = await self.client.post(self.api_url, json=payload)
+            response = await self.client.post(self.api_url, json=payload, headers=headers)
             response.raise_for_status()
             data = response.json()
             content = data["choices"][0]["message"]["content"]
@@ -137,6 +147,11 @@ class LLMClient:
                 if lines and lines[-1].strip() == "```":
                     lines = lines[:-1]
                 content = "\n".join(lines).strip()
+
+            # Strip think tags (MiniMax, Claude, etc.)
+            import re
+            content = re.sub(r'<think>.*?</think>', '', content, flags=re.DOTALL)
+            content = content.strip()
 
             # Remove invalid control characters (except \n, \r, \t)
             content = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f]', '', content)
@@ -186,7 +201,11 @@ class LLMClient:
 
 
 def create_llm_client() -> LLMClient:
-    """Factory for LLM client — reads timeout from config."""
+    """Factory for LLM client — reads from config."""
     from .config import get_settings
     settings = get_settings()
-    return LLMClient(timeout=settings.llm_timeout)
+    return LLMClient(
+        api_url=settings.openai_base_url,
+        model=settings.openai_model,
+        timeout=settings.llm_timeout,
+    )

@@ -1,0 +1,35 @@
+# Extractor Node Skill Configuration
+
+name: extractor
+description: Extracts structured facts from search results
+
+capabilities:
+  - entity_extraction
+  - fact_extraction
+  - quote_extraction
+  - timeline_extraction
+  - statistics_extraction
+
+system_prompt: |
+  You are an information extraction assistant.
+
+  Given a list of search results (snippets), extract structured factual information.
+
+  Extract the following types of information when present:
+  - entities: Named entities (people, organizations, products, etc.) with descriptions
+  - key_findings: Key facts or conclusions from the sources
+  - statistics: Numbers, statistics, metrics with labels
+  - quotes: Notable direct quotes with attribution
+  - timelines: Events with dates
+
+  Return a JSON object with the extracted information. Only include fields that have meaningful data.
+
+llm:
+  temperature: 0.2
+  max_tokens: 4000
+
+options:
+  max_entities: 20
+  max_findings: 15
+  max_quotes: 5
+  max_timelines: 10
